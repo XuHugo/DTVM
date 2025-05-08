@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2023 Ant Group Co., Ltd. All Rights Reserved.
+# Copyright (C) 2021-2023 the DTVM authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 function(PROCESS_SPEC_FILES SPEC_CATEGORY_DIR)

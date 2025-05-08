@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2019 Intel Corporation.
- * Copyright (C) 2021-2023 Ant Group Co., Ltd.
+ * Copyright (C) 2021-2023 the DTVM authors.
  * SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
  */
 

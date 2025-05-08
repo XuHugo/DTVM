@@ -2,8 +2,17 @@ name: DTVM development test CI in x86-64
 
 on:
   push:
-    paths:
-      - '**'
+    paths-ignore:
+      - 'docs/**'
+      - 'resources/**'
+      - '*.md'
+      - '.gitignore'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'resources/**'
+      - '*.md'
+      - '.gitignore'
 permissions:
     contents: read
 

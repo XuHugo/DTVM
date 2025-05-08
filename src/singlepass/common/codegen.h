@@ -1,4 +1,4 @@
-// Copyright (C) 2021-2023 Ant Group Co., Ltd. All Rights Reserved.
+// Copyright (C) 2021-2023 the DTVM authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 #ifndef ZEN_SINGLEPASS_COMMON_CODEGEN_H
@@ -370,7 +370,8 @@ public:
       mov<F64, TempRegIndex>(LHS, RHS);
       break;
     default:
-      ZEN_ASSERT_TODO();
+      // ZEN_ASSERT_TODO();
+      throw getError(ErrorCode::TypeMismatch);
     }
   }
 
@@ -1020,7 +1021,8 @@ private:
           self().template storeRegToMem<V128>(Info.getReg(), Addr);
           break;
         default:
-          ZEN_ASSERT_TODO();
+          // ZEN_ASSERT_TODO();
+          throw getError(ErrorCode::TypeMismatch);
         }
         // set local not in register
         Layout.clearLocalInRegister(I);

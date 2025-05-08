@@ -26,9 +26,9 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) before contribu
 
 By contributing to this project, you agree to the following terms:
 
-1. **Grant of Copyright License**: You hereby grant to Ant Group Co., Ltd. and to recipients of software distributed by Ant Group Co., Ltd. a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to reproduce, prepare derivative works of, publicly display, publicly perform, sublicense, and distribute Your Contributions and such derivative works.
+1. **Grant of Copyright License**: You hereby grant to the DTVM authors. and to recipients of software distributed by the DTVM authors. a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to reproduce, prepare derivative works of, publicly display, publicly perform, sublicense, and distribute Your Contributions and such derivative works.
 
-2. **Grant of Patent License**: You hereby grant to Ant Group Co., Ltd. and to recipients of software distributed by Ant Group Co., Ltd. a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable (except as stated in this section) patent license to make, have made, use, offer to sell, sell, import, and otherwise transfer the Work, where such license applies only to those patent claims licensable by You that are necessarily infringed by Your Contribution(s) alone or by combination of Your Contribution(s) with the Work to which such Contribution(s) was submitted.
+2. **Grant of Patent License**: You hereby grant to the DTVM authors. and to recipients of software distributed by the DTVM authors. a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable (except as stated in this section) patent license to make, have made, use, offer to sell, sell, import, and otherwise transfer the Work, where such license applies only to those patent claims licensable by You that are necessarily infringed by Your Contribution(s) alone or by combination of Your Contribution(s) with the Work to which such Contribution(s) was submitted.
 
 3. **Representations**:
    - You represent that you are legally entitled to grant the above license.
@@ -40,7 +40,7 @@ By contributing to this project, you agree to the following terms:
    - Except for the licenses granted herein, You reserve all right, title, and interest in and to Your Contributions.
    - Your Contributions are provided "AS IS" WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
-5. **Notification of Changes**: You agree to notify Ant Group Co., Ltd. of any facts or circumstances of which you become aware that would make these representations inaccurate in any respect.
+5. **Notification of Changes**: You agree to notify the DTVM authors. of any facts or circumstances of which you become aware that would make these representations inaccurate in any respect.
 
 ### Corporate Contributor License Agreement
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021-2023 Ant Group Co., Ltd.
+ * Copyright (C) 2021-2023 the DTVM authors.
  */
 #ifndef COMPILER_CGIR_PASS_LLVM_UTILS_H
 #define COMPILER_CGIR_PASS_LLVM_UTILS_H

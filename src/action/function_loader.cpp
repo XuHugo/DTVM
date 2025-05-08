@@ -1,4 +1,4 @@
-// Copyright (C) 2021-2023 Ant Group Co., Ltd. All Rights Reserved.
+// Copyright (C) 2021-2023 the DTVM authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 #include "action/function_loader.h"
@@ -106,7 +106,10 @@ WASMType FunctionLoader::popValueType(WASMType Type) {
   }
 
   if (ValueTypes.back() == WASMType::ANY) {
-    ZEN_ASSERT(Type != WASMType::ANY);
+    // ZEN_ASSERT(Type != WASMType::ANY);
+    if (Type == WASMType::ANY) {
+      throw getError(ErrorCode::TypeMismatch);
+    }
   } else if (Type == WASMType::ANY) {
     Type = ValueTypes.back();
   } else if (ValueTypes.back() != Type) {

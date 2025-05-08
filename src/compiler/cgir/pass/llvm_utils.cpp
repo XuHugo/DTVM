@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021-2023 Ant Group Co., Ltd.
+ * Copyright (C) 2021-2023 the DTVM authors.
  */
 #include "compiler/cgir/pass/llvm_utils.h"
 

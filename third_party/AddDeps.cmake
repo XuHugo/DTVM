@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2025 Ant Group Co., Ltd. All Rights Reserved.
+# Copyright (C) 2021-2025 the DTVM authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)

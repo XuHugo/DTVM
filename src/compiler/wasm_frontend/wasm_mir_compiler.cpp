@@ -1,4 +1,4 @@
-// Copyright (C) 2021-2023 Ant Group Co., Ltd. All Rights Reserved.
+// Copyright (C) 2021-2023 the DTVM authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 #include "compiler/wasm_frontend/wasm_mir_compiler.h"
 #include "action/bytecode_visitor.h"
