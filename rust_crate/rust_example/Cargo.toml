@@ -7,3 +7,7 @@ edition = "2021"
 
 [dependencies]
 dtvmcore_rust = { path = "../" }
+#dtvmcore_rust = { path = "../DTVM/rust_crate" }
+cty = "0.2.2"
+libc = { version = "0.2.121" }
+hex = "0.4"

@@ -1,0 +1,219 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# ======================== [Begin] Project Config ========================
+config_setting(
+    name = "linux",
+    constraint_values = [
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "macos",
+    constraint_values = [
+        "@platforms//os:osx",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "aarch64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "enable_asan",
+    values = {"define": "ZEN_ENABLE_ASAN=ON"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "enable_sgx",
+    values = {"define": "ZEN_ENABLE_SGX=ON"},
+    visibility = ["//visibility:public"],
+)
+
+# ======================== [End] Project Config ========================
+
+# ======================== [Begin] Compilation and Link Options ========================
+
+PROJECT_DEFINES = select({
+    ":linux": [
+        "ZEN_BUILD_PLATFORM_LINUX",
+        "ZEN_BUILD_PLATFORM_POSIX",
+    ],
+    ":macos": [
+        "ZEN_BUILD_PLATFORM_DARWIN",
+        "ZEN_BUILD_PLATFORM_POSIX",
+    ],
+}) + select({
+    ":x86_64": ["ZEN_BUILD_TARGET_X86_64"],
+    ":aarch64": ["ZEN_BUILD_TARGET_AARCH64"],
+}) + select({
+    ":enable_sgx": ["ZEN_DISABLE_CXX17_STL"],
+    "//conditions:default": ["ZEN_ENABLE_SPDLOG"],
+}) + [
+    "ZEN_ENABLE_JIT",
+    "ZEN_ENABLE_SINGLEPASS_JIT",
+    "ZEN_ENABLE_DUMP_CALL_STACK",
+    "ZEN_ENABLE_DWASM",
+    "ZEN_ENABLE_VIRTUAL_STACK",
+    "ZEN_ENABLE_CHECKED_ARITHMETIC",
+]
+
+PROJECT_COPTS = [
+    "-Wall",
+    "-Wextra",
+    "-Wno-unused-parameter",
+    "-Wno-invalid-offsetof",
+] + select({
+    ":enable_asan": ["-fsanitize=address"],
+    "//conditions:default": [],
+})
+
+PROJECT_LINKOPTS = select({
+    ":enable_asan": [
+        "-fsanitize=address",
+        "-static-libasan",
+    ],
+    "//conditions:default": [],
+})
+
+# ======================== [End] Compilation and Link Options ========================
+
+# ======================== [Begin] Targets Control ========================
+cc_library(
+    name = "zetaengine_headers",
+    hdrs = glob([
+        "src/action/*.h",
+        "src/common/**/*.def",
+        "src/common/*.h",
+        "src/entrypoint/*.h",
+        "src/platform/*.h",
+        "src/runtime/*.h",
+        "src/singlepass/common/*.h",
+        "src/singlepass/*.h",
+        "src/wni/*.h",
+    ]) + [
+        "src/zetaengine.h",
+        "src/zetaengine-c.h",
+    ] + select({
+        ":x86_64": glob([
+            "src/singlepass/x64/**/*.h",
+        ]),
+        ":aarch64": glob([
+            "src/singlepass/a64/**/*.h",
+        ]),
+    }) + select({
+        ":enable_sgx": glob([
+            "src/common/libcxx/*.h",
+        ]),
+        "//conditions:default": [
+            "src/common/libcxx/type_traits.h",
+            "src/common/libcxx/utility.h",
+        ],
+    }),
+    strip_include_prefix = "src",
+)
+
+cc_library(
+    name = "utils_lib",
+    srcs = glob(
+        [
+            "src/utils/*.cpp",
+        ],
+        exclude = ["src/utils/perf.cpp"],
+    ),
+    hdrs = glob(
+        [
+            "src/utils/*.h",
+        ],
+        exclude = ["src/utils/perf.h"],
+    ),
+    copts = PROJECT_COPTS,
+    defines = PROJECT_DEFINES,
+    linkopts = PROJECT_LINKOPTS,
+    linkstatic = True,
+    strip_include_prefix = "src",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":zetaengine_headers",
+        "@zen_deps_spdlog//:spdlog",
+    ],
+)
+
+cc_library(
+    name = "zetaengine",
+    srcs = glob(
+        [
+            "src/action/*.cpp",
+            "src/common/*.cpp",
+            "src/entrypoint/*.cpp",
+            "src/runtime/*.cpp",
+            "src/singlepass/*.cpp",
+            "src/log/*.cpp",
+            "src/zetaengine-c.cpp",
+        ],
+    ) + select({
+        ":linux": glob(["src/platform/posix/*.cpp"]),
+        ":macos": glob(["src/platform/posix/*.cpp"]),
+    }) + select({
+        ":x86_64": [
+            "src/entrypoint/arch/callNative_x86_64.S",
+            "src/singlepass/x64/asm/register.cpp",
+        ],
+        ":aarch64": [
+            "src/entrypoint/arch/callNative_aarch64.S",
+            "src/singlepass/a64/asm/register.cpp",
+        ],
+    }),
+    hdrs = [
+        "src/wni/boilerplate.cpp",
+        "src/zetaengine.h",
+        "src/zetaengine-c.h",
+    ],
+    copts = PROJECT_COPTS,
+    defines = PROJECT_DEFINES,
+    includes = ["src"],  # Add this to specify include directory
+    include_prefix = "zetaengine",
+    linkopts = PROJECT_LINKOPTS + ["-lpthread"],
+    linkstatic = True,
+    strip_include_prefix = "src",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":utils_lib",
+        ":zetaengine_headers",
+        "@zen_deps_asmjit//:asmjit",
+        "@zen_deps_spdlog//:spdlog",
+    ],
+)
+
+cc_binary(
+    name = "dtvm",
+    srcs = [
+        "src/cli/dtvm.cpp",
+        "src/zetaengine.h",
+    ],
+    copts = PROJECT_COPTS,
+    defines = PROJECT_DEFINES,
+    includes = ["src"],
+    linkopts = PROJECT_LINKOPTS,
+    deps = [
+        ":zetaengine",
+        "@zen_deps_CLI11//:CLI11",
+    ],
+)
+
+# ======================== [End] Targets Control ========================

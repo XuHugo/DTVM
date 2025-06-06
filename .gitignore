@@ -24,11 +24,13 @@ bin/
 compile_commands.json
 .local_bazel_registry/
 MODULE.bazel.lock
+
 # Bazel cache
 bazel-dtvm
 bazel-bin
 bazel-out
 bazel-testlogs
+bazel-DTVM
 
 # tmp test files
 /*.wat
