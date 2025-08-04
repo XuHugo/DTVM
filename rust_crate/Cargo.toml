@@ -2,20 +2,120 @@
 name = "dtvmcore_rust"
 version = "0.1.0"
 edition = "2021"
+authors = ["DTVM Authors"]
+description = "Rust implementation of EVM host functions for DTVM runtime"
+license = "Apache-2.0"
+repository = "https://github.com/dtvm/dtvm"
+documentation = "https://docs.rs/dtvmcore_rust"
+keywords = ["evm", "blockchain", "wasm", "smart-contracts", "ethereum"]
+categories = ["cryptography", "wasm", "development-tools"]
+readme = "README.md"
 build = "build.rs"
-links="zetaengine"
-#
-[build]
-#target="x86_64-unknown-linux-gnu"
-#rustc-link-search=["."]
-#rustc-link-lib=["zetaengine"]
-#root="."
+links = "zetaengine"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# Minimum supported Rust version
+rust-version = "1.70"
+
+# Include additional files in the package
+include = [
+    "src/**/*",
+    "build.rs",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE*",
+]
+
+[build]
+# Build configuration (commented out for flexibility)
+#target = "x86_64-unknown-linux-gnu"
+#rustc-link-search = ["."]
+#rustc-link-lib = ["zetaengine"]
+#root = "."
+
+# Feature flags for optional functionality
+[features]
+default = ["evm", "logging"]
+
+# Core EVM host functions implementation
+evm = []
+
+# Enhanced logging and debugging support
+logging = ["log", "env_logger"]
+
+# Development and testing features
+dev = ["logging"]
+
+# Performance optimizations (for release builds)
+optimized = []
+
+# Additional cryptographic functions
+crypto-extra = []
 
 [build-dependencies]
 cc = "1.0"
 
 [dependencies]
+# Core system dependencies
 cty = "0.2.2"
 libc = { version = "0.2.121" }
+
+# EVM host functions dependencies
+hex = { version = "0.4", features = ["std"] }
+log = { version = "0.4", optional = true }
+env_logger = { version = "0.10", optional = true }
+
+[dev-dependencies]
+# Testing dependencies
+criterion = "0.5"
+proptest = "1.0"
+tempfile = "3.0"
+
+# Benchmarking
+[[bench]]
+name = "evm_benchmarks"
+harness = false
+required-features = ["evm"]
+
+# Documentation configuration
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+# Profile configurations
+[profile.dev]
+# Development profile with debug info and fast compilation
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256
+
+[profile.release]
+# Release profile optimized for performance
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = 'abort'
+incremental = false
+codegen-units = 1
+
+[profile.test]
+# Test profile with optimizations for faster test execution
+opt-level = 1
+debug = true
+debug-assertions = true
+overflow-checks = true
+
+[profile.bench]
+# Benchmark profile for accurate performance measurements
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = 'abort'

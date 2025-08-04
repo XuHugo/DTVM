@@ -3,3 +3,7 @@
 
 pub mod core;
 pub mod tests;
+pub mod evm;
+
+// Re-export main EVM types for convenience
+pub use evm::{MockContext, BlockInfo, TransactionInfo, HostFunctionError, HostFunctionResult};
