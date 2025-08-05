@@ -1,6 +1,5 @@
 // Copyright (C) 2021-2025 the DTVM authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-
 use dtvmcore_rust::core::{
     host_module::*, instance::*, r#extern::*,
     types::*, runtime::ZenRuntime,
@@ -13,7 +12,7 @@ use std::rc::Rc;
 // Type alias for ZenInstance<MockContext>
 type MockInstance = ZenInstance<MockContext>;
 
-// Mock context to store contract state (similar to mainv0.rs)
+// Mock context to store contract state
 #[derive(Clone)]
 struct MockContext {
     contract_code: Vec<u8>,
@@ -59,7 +58,7 @@ impl MockContext {
     }
 }
 
-// Host API implementations (based on mainv0.rs but using our EVM module functions)
+// Host API implementations
 extern "C" fn get_address(wasm_inst: *mut ZenInstanceExtern, result_offset: i32) {
     let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
     if !inst.validate_wasm_addr(result_offset as u32, 20) {
@@ -344,7 +343,129 @@ extern "C" fn code_copy(wasm_inst: *mut ZenInstanceExtern, result_offset: i32, c
     }
 }
 
-// Additional EVM host functions
+extern "C" fn get_blob_base_fee(wasm_inst: *mut ZenInstanceExtern, result_offset: i32) {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    if !inst.validate_wasm_addr(result_offset as u32, 32) {
+        inst.set_exception_by_hostapi(9);
+        return;
+    }
+    let mut result = vec![0; 32];
+    result[31] = 1;
+    unsafe {
+        std::ptr::copy_nonoverlapping(result.as_ptr(), inst.get_host_memory(result_offset as u32), 32);
+    }
+}
+
+extern "C" fn get_base_fee(wasm_inst: *mut ZenInstanceExtern, result_offset: i32) {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    if !inst.validate_wasm_addr(result_offset as u32, 32) {
+        inst.set_exception_by_hostapi(9);
+        return;
+    }
+    let mut result = vec![0; 32];
+    result[31] = 1;
+    unsafe {
+        std::ptr::copy_nonoverlapping(result.as_ptr(), inst.get_host_memory(result_offset as u32), 32);
+    }
+}
+
+extern "C" fn get_block_coinbase(wasm_inst: *mut ZenInstanceExtern, result_offset: i32) {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    if !inst.validate_wasm_addr(result_offset as u32, 20) {
+        inst.set_exception_by_hostapi(9);
+        return;
+    }
+    let result = vec![0x02; 20];
+    unsafe {
+        std::ptr::copy_nonoverlapping(result.as_ptr(), inst.get_host_memory(result_offset as u32), 20);
+    }
+}
+
+extern "C" fn get_tx_gas_price(wasm_inst: *mut ZenInstanceExtern, result_offset: i32) {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    if !inst.validate_wasm_addr(result_offset as u32, 32) {
+        inst.set_exception_by_hostapi(9);
+        return;
+    }
+    let ctx = inst.get_extra_ctx();
+    let gas_price = ctx.get_gas_price();
+    unsafe {
+        std::ptr::copy_nonoverlapping(gas_price.as_ptr(), inst.get_host_memory(result_offset as u32), 32);
+    }
+}
+
+extern "C" fn get_external_balance(wasm_inst: *mut ZenInstanceExtern, address_offset: i32, result_offset: i32) {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    if !inst.validate_wasm_addr(address_offset as u32, 20) || !inst.validate_wasm_addr(result_offset as u32, 32) {
+        inst.set_exception_by_hostapi(9);
+        return;
+    }
+    let ctx = inst.get_extra_ctx();
+    let address = unsafe { std::slice::from_raw_parts(inst.get_host_memory(address_offset as u32), 20) };
+    let balance = ctx.get_balance(address);
+    unsafe {
+        std::ptr::copy_nonoverlapping(balance.as_ptr(), inst.get_host_memory(result_offset as u32), 32);
+    }
+}
+
+extern "C" fn get_external_code_size(wasm_inst: *mut ZenInstanceExtern, addr_offset: i32) -> i32 {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    if !inst.validate_wasm_addr(addr_offset as u32, 20) {
+        inst.set_exception_by_hostapi(9);
+        return -1;
+    }
+    let ctx = inst.get_extra_ctx();
+    0 // assuming no other contract in mock
+}
+
+extern "C" fn get_external_code_hash(wasm_inst: *mut ZenInstanceExtern, addr_offset: i32, result_offset: i32) {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    if !inst.validate_wasm_addr(addr_offset as u32, 20) || !inst.validate_wasm_addr(result_offset as u32, 32) {
+        inst.set_exception_by_hostapi(9);
+        return;
+    }
+    let ctx = inst.get_extra_ctx();
+    let mut result = vec![0; 32];
+    result[0] = 0xEC; // 0xEC means external code hash
+    unsafe {
+        std::ptr::copy_nonoverlapping(result.as_ptr(), inst.get_host_memory(result_offset as u32), 32);
+    }
+}
+
+extern "C" fn external_code_copy(wasm_inst: *mut ZenInstanceExtern, addr_offset: i32, result_offset: i32, code_offset: i32, length: i32) {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    if !inst.validate_wasm_addr(addr_offset as u32, 20) || !inst.validate_wasm_addr(result_offset as u32, length as u32) {
+        inst.set_exception_by_hostapi(9);
+        return;
+    }
+    let ctx = inst.get_extra_ctx();
+    if length > 0 {
+        inst.set_exception_by_hostapi(9);
+        return;
+    }
+    // do nothing because extern contract always Length zero in mock env
+}
+
+extern "C" fn get_block_prev_randao(wasm_inst: *mut ZenInstanceExtern, result_offset: i32) {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    if !inst.validate_wasm_addr(result_offset as u32, 32) {
+        inst.set_exception_by_hostapi(9);
+        return;
+    }
+    let mut result = vec![0; 32];
+    result[0] = 0x01;
+    unsafe {
+        std::ptr::copy_nonoverlapping(result.as_ptr(), inst.get_host_memory(result_offset as u32), 32);
+    }
+}
+
+extern "C" fn self_destruct(wasm_inst: *mut ZenInstanceExtern, addr_offset: i32) {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    let ctx = inst.get_extra_ctx();
+    println!("evm selfdestruct");
+    inst.set_exception_by_hostapi(9);
+}
+
 extern "C" fn sha256(wasm_inst: *mut ZenInstanceExtern, input_offset: i32, input_length: i32, result_offset: i32) {
     let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
     if !inst.validate_wasm_addr(result_offset as u32, 32) {
@@ -391,20 +512,83 @@ extern "C" fn mulmod(wasm_inst: *mut ZenInstanceExtern, a_offset: i32, b_offset:
         return;
     }
     let mut result = vec![0; 32];
+    result[0] = 0x34;
+    unsafe {
+        std::ptr::copy_nonoverlapping(result.as_ptr(), inst.get_host_memory(result_offset as u32), 32);
+    }
+}
+
+extern "C" fn expmod(wasm_inst: *mut ZenInstanceExtern, a_offset: i32, b_offset: i32, n_offset: i32, result_offset: i32) {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    if !inst.validate_wasm_addr(result_offset as u32, 32) {
+        inst.set_exception_by_hostapi(9);
+        return;
+    }
+    let mut result = vec![0; 32];
     result[0] = 0x45;
     unsafe {
         std::ptr::copy_nonoverlapping(result.as_ptr(), inst.get_host_memory(result_offset as u32), 32);
     }
 }
 
+extern "C" fn call_contract(wasm_inst: *mut ZenInstanceExtern, gas: i64, addr_offset: i32, value_offset: i32, data_offset: i32, data_length: i32) -> i32 {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    let ctx = inst.get_extra_ctx();
+    // call sub contract not allowed in mock env now
+    1
+}
+
+extern "C" fn call_code(wasm_inst: *mut ZenInstanceExtern, gas: i64, addr_offset: i32, value_offset: i32, data_offset: i32, data_length: i32) -> i32 {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    let ctx = inst.get_extra_ctx();
+    // call sub contract not allowed in mock env now
+    1
+}
+
+extern "C" fn call_delegate(wasm_inst: *mut ZenInstanceExtern, gas: i64, addr_offset: i32, data_offset: i32, data_length: i32) -> i32 {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    let ctx = inst.get_extra_ctx();
+    // call sub contract not allowed in mock env now
+    1
+}
+
+extern "C" fn call_static(wasm_inst: *mut ZenInstanceExtern, gas: i64, addr_offset: i32, data_offset: i32, data_length: i32) -> i32 {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    let ctx = inst.get_extra_ctx();
+    // call sub contract not allowed in mock env now
+    1
+}
+
+extern "C" fn create_contract(wasm_inst: *mut ZenInstanceExtern, value_offset: i32, code_offset: i32, code_length: i32, data_offset: i32, data_length: i32, salt_offset: i32, is_create2: i32, result_offset: i32) -> i32 {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    let ctx = inst.get_extra_ctx();
+    // creating sub contract not allowed in mock env now
+    1
+}
+
+extern "C" fn get_return_data_size(wasm_inst: *mut ZenInstanceExtern) -> i32 {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    let ctx = inst.get_extra_ctx();
+    // no allowing call sub contract in mock env
+    0
+}
+
+extern "C" fn return_data_copy(wasm_inst: *mut ZenInstanceExtern, result_offset: i32, data_offset: i32, length: i32) {
+    let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
+    if !inst.validate_wasm_addr(result_offset as u32, length as u32) {
+        inst.set_exception_by_hostapi(9);
+        return;
+    }
+    let ctx = inst.get_extra_ctx();
+    // no allowing call sub contract in mock env
+    // copy nothing in mock env
+}
+
 fn main() {
-    println!("DTVM Rust Core - EVM Host Functions Integration Test");
-    println!("====================================================");
-    
     let rt = Rc::new(ZenRuntime::new(None));
     let rt_ref = &*rt;
 
-    // Register host APIs (based on mainv0.rs but with our EVM functions)
+    // Register host APIs
     let host_funcs = vec![
         ZenHostFuncDesc {
             name: "get_address".to_string(),
@@ -527,6 +711,66 @@ fn main() {
             ptr: code_copy as *const cty::c_void,
         },
         ZenHostFuncDesc {
+            name: "get_blob_base_fee".to_string(),
+            arg_types: vec![ZenValueType::I32],
+            ret_types: vec![],
+            ptr: get_blob_base_fee as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "get_base_fee".to_string(),
+            arg_types: vec![ZenValueType::I32],
+            ret_types: vec![],
+            ptr: get_base_fee as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "get_block_coinbase".to_string(),
+            arg_types: vec![ZenValueType::I32],
+            ret_types: vec![],
+            ptr: get_block_coinbase as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "get_tx_gas_price".to_string(),
+            arg_types: vec![ZenValueType::I32],
+            ret_types: vec![],
+            ptr: get_tx_gas_price as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "get_external_balance".to_string(),
+            arg_types: vec![ZenValueType::I32, ZenValueType::I32],
+            ret_types: vec![],
+            ptr: get_external_balance as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "get_external_code_size".to_string(),
+            arg_types: vec![ZenValueType::I32],
+            ret_types: vec![ZenValueType::I32],
+            ptr: get_external_code_size as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "get_external_code_hash".to_string(),
+            arg_types: vec![ZenValueType::I32, ZenValueType::I32],
+            ret_types: vec![],
+            ptr: get_external_code_hash as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "external_code_copy".to_string(),
+            arg_types: vec![ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32],
+            ret_types: vec![],
+            ptr: external_code_copy as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "get_block_prev_randao".to_string(),
+            arg_types: vec![ZenValueType::I32],
+            ret_types: vec![],
+            ptr: get_block_prev_randao as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "self_destruct".to_string(),
+            arg_types: vec![ZenValueType::I32],
+            ret_types: vec![],
+            ptr: self_destruct as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
             name: "sha256".to_string(),
             arg_types: vec![ZenValueType::I32, ZenValueType::I32, ZenValueType::I32],
             ret_types: vec![],
@@ -550,6 +794,54 @@ fn main() {
             ret_types: vec![],
             ptr: mulmod as *const cty::c_void,
         },
+        ZenHostFuncDesc {
+            name: "expmod".to_string(),
+            arg_types: vec![ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32],
+            ret_types: vec![],
+            ptr: expmod as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "call_contract".to_string(),
+            arg_types: vec![ZenValueType::I64, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32],
+            ret_types: vec![ZenValueType::I32],
+            ptr: call_contract as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "call_code".to_string(),
+            arg_types: vec![ZenValueType::I64, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32],
+            ret_types: vec![ZenValueType::I32],
+            ptr: call_code as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "call_delegate".to_string(),
+            arg_types: vec![ZenValueType::I64, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32],
+            ret_types: vec![ZenValueType::I32],
+            ptr: call_delegate as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "call_static".to_string(),
+            arg_types: vec![ZenValueType::I64, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32],
+            ret_types: vec![ZenValueType::I32],
+            ptr: call_static as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "create_contract".to_string(),
+            arg_types: vec![ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32],
+            ret_types: vec![ZenValueType::I32],
+            ptr: create_contract as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "get_return_data_size".to_string(),
+            arg_types: vec![],
+            ret_types: vec![ZenValueType::I32],
+            ptr: get_return_data_size as *const cty::c_void,
+        },
+        ZenHostFuncDesc {
+            name: "return_data_copy".to_string(),
+            arg_types: vec![ZenValueType::I32, ZenValueType::I32, ZenValueType::I32],
+            ret_types: vec![],
+            ptr: return_data_copy as *const cty::c_void,
+        },
     ];
 
     let host_module = rt_ref.create_host_module("env", host_funcs.iter(), true);
@@ -557,15 +849,9 @@ fn main() {
         println!("host_module error: {err}");
         return;
     }
-    println!("✓ EVM Host module created with {} functions", host_funcs.len());
 
-    // Try to load our EVM test contract first, fallback to fib.0.wasm
-    let (wasm_path, wasm_bytes) = if let Ok(bytes) = fs::read("evm_test_contract.wasm") {
-        ("evm_test_contract.wasm", bytes)
-    } else {
-        println!("EVM test contract not found, using fib.0.wasm");
-        ("../example/fib.0.wasm", fs::read("../example/fib.0.wasm").unwrap())
-    };
+    let wasm_path = "../example/fib.0.wasm";
+    let wasm_bytes = fs::read(wasm_path).unwrap();
     println!("loading wasm module {wasm_path}");
     let maybe_mod = rt_ref.load_module_from_bytes(wasm_path, &wasm_bytes);
     if let Err(err) = maybe_mod {
@@ -593,14 +879,6 @@ fn main() {
         }
     };
     
-    println!("✓ WASM instance created with EVM host functions");
-    
-    // Initialize the contract if it has _start function
-    if let Ok(_) = inst.call_wasm_func("_start", &[]) {
-        println!("✓ Contract initialized");
-    }
-    
-    // Test original WASM functionality
     let args = vec![ZenValue::ZenI32Value(5)];
     let results = inst.call_wasm_func("fib", &args);
     if let Err(err) = results {
@@ -608,38 +886,5 @@ fn main() {
         return;
     }
     let result = &results.unwrap()[0];
-    println!("✓ wasm func fib(5) result: {result}");
-    
-    // Test EVM host functions if available
-    if wasm_path == "evm_test_contract.wasm" {
-        println!("\n--- Testing EVM Host Functions Called from WASM Contract ---");
-        let evm_results = inst.call_wasm_func("test_evm_functions", &[]);
-        if let Err(err) = evm_results {
-            println!("Call EVM test func error: {}", err);
-        } else {
-            let evm_result = &evm_results.unwrap()[0];
-            println!("✓ EVM test function result: {}", evm_result);
-        }
-        
-        // Test finish function (this will exit the instance)
-        println!("\n--- Testing EVM finish() function ---");
-        let finish_results = inst.call_wasm_func("test_finish", &[]);
-        match finish_results {
-            Ok(result) => println!("✓ Finish test result: {} values returned", result.len()),
-            Err(err) => println!("✓ Finish test exited as expected: {}", err),
-        }
-    }
-    
-    println!("\n🎉 EVM Host Functions Integration Test Completed!");
-    println!("✅ {} EVM host functions registered and available to WASM contracts", host_funcs.len());
-    println!("✅ WASM contracts can now call EVM host functions like:");
-    println!("   - get_address(), get_caller(), get_call_value()");
-    println!("   - get_block_number(), get_block_timestamp(), get_block_gas_limit()");
-    println!("   - storage_store(), storage_load()");
-    println!("   - get_call_data_size(), call_data_copy()");
-    println!("   - emit_log_event()");
-    println!("   - sha256(), keccak256(), addmod(), mulmod()");
-    println!("   - finish(), revert(), invalid()");
-    println!("   - get_code_size(), code_copy()");
-    println!("\n🚀 The system is ready for EVM smart contract execution!");
+    println!("wasm func fib(5) result: {result}");
 }

@@ -11,3 +11,11 @@ dtvmcore_rust = { path = "../" }
 cty = "0.2.2"
 libc = { version = "0.2.121" }
 hex = "0.4"
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
+[[bin]]
+name = "main_with_full_evm"
+path = "src/main_with_full_evm.rs"

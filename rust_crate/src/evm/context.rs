@@ -679,3 +679,10 @@ impl MockContext {
         copy_len
     }
 }
+
+// Implement AsRef<MockContext> for MockContext to support the host functions API
+impl AsRef<MockContext> for MockContext {
+    fn as_ref(&self) -> &MockContext {
+        self
+    }
+}
