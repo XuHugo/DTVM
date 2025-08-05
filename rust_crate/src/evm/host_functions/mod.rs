@@ -48,25 +48,30 @@ pub use account::{
 };
 
 // Block operations
-// pub use block::{
-//     get_block_number, get_block_timestamp, get_block_gas_limit,
-//     get_block_coinbase, get_block_prev_randao, get_block_hash
-// };
+pub use block::{
+    get_block_number, get_block_timestamp, get_block_gas_limit,
+    get_block_coinbase, get_block_prev_randao, get_block_hash
+};
+
+// Transaction operations
+pub use transaction::{
+    get_call_data_size, call_data_copy, get_gas_left, get_tx_gas_price
+};
 
 // Storage operations
-// pub use storage::{storage_store, storage_load};
+pub use storage::{storage_store, storage_load};
 
 // Code operations
-// pub use code::{
-//     get_code_size, code_copy, get_external_code_size,
-//     get_external_code_hash, external_code_copy
-// };
+pub use code::{
+    get_code_size, code_copy, get_external_code_size,
+    get_external_code_hash, external_code_copy
+};
 
 // Crypto operations
-// pub use crypto::{sha256, keccak256};
+pub use crypto::{sha256, keccak256};
 
 // Math operations
-// pub use math::{addmod, mulmod, expmod};
+pub use math::{addmod, mulmod, expmod};
 
 // Contract operations
 pub use contract::{
@@ -84,5 +89,5 @@ pub use log::{
     emit_log_event, emit_log0, emit_log1, emit_log2, emit_log3, emit_log4
 };
 
-// Fee operations (when implemented)
-// pub use fee::*;
+// Fee operations
+pub use fee::{get_base_fee, get_blob_base_fee};

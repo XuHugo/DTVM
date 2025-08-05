@@ -19,3 +19,11 @@ path = "src/main.rs"
 [[bin]]
 name = "main_with_full_evm"
 path = "src/main_with_full_evm.rs"
+
+[[bin]]
+name = "main_counter"
+path = "src/main_counter.rs"
+
+[[bin]]
+name = "main_with_full_evm_new"
+path = "src/main_with_full_evm_new.rs"

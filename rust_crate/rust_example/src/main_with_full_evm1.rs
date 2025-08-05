@@ -10,16 +10,13 @@
 //! - Advanced memory management and validation
 //! - Production-ready error handling and logging
 
-mod evm_bridge;
-
 use dtvmcore_rust::core::{
     host_module::*, instance::*, r#extern::*,
     types::*, runtime::ZenRuntime,
 };
-use dtvmcore_rust::evm::MockContext;
+use dtvmcore_rust::evm::{MockContext, HostFunctionResult};
 use std::fs;
 use std::rc::Rc;
-use evm_bridge::create_complete_evm_host_functions;
 
 // Type alias for ZenInstance<MockContext>
 type MockInstance = ZenInstance<MockContext>;
@@ -947,16 +944,10 @@ fn main() {
 
     // Load WASM module
     println!("\n=== Loading WASM Module ===");
-    let (wasm_path, wasm_bytes) = if let Ok(bytes) = fs::read("simple_token.wasm") {
-        ("simple_token.wasm", bytes)
-    } else if let Ok(bytes) = fs::read("token_system.wasm") {
-        ("token_system.wasm", bytes)
-    } else if let Ok(bytes) = fs::read("counter.wasm") {
-        ("counter.wasm", bytes)
-    } else if let Ok(bytes) = fs::read("evm_test_contract.wasm") {
+    let (wasm_path, wasm_bytes) = if let Ok(bytes) = fs::read("evm_test_contract.wasm") {
         ("evm_test_contract.wasm", bytes)
     } else {
-        println!("Token system, counter and EVM test contracts not found, using fib.0.wasm");
+        println!("EVM test contract not found, using fib.0.wasm");
         ("../example/fib.0.wasm", fs::read("../example/fib.0.wasm").unwrap())
     };
     
@@ -1020,384 +1011,27 @@ fn main() {
     println!("✓ WASM instance created with complete EVM host functions");
 
     // Initialize the contract if it has _start function
-    // Note: Smart contracts typically don't use _start, so we skip this for EVM contracts
-    // if let Ok(_) = inst.call_wasm_func("_start", &[]) {
-    //     println!("✓ Contract initialized");
-    // }
+    if let Ok(_) = inst.call_wasm_func("_start", &[]) {
+        println!("✓ Contract initialized");
+    }
 
-    // Test original WASM functionality based on contract type
-    println!("\n=== Test 1: Contract Initialization ===");
-    if wasm_path == "simple_token.wasm" {
-        // For simple token, we'll test initialization in the main test section
-        println!("✓ Simple token contract loaded, initialization will be tested below");
-    } else if wasm_path == "token_system.wasm" {
-        // For token system, we'll test initialization in the main test section
-        println!("✓ Token system contract loaded, initialization will be tested below");
-    } else if wasm_path == "counter.wasm" {
-        // For counter, test basic functionality
-        println!("✓ Counter contract loaded, functionality will be tested below");
-    } else {
-        // For other contracts like fib.0.wasm, test fib function
-        let args = vec![ZenValue::ZenI32Value(5)];
-        let results = inst.call_wasm_func("fib", &args);
-        match results {
-            Ok(results) => {
-                let result = &results[0];
-                println!("✓ WASM func fib(5) result: {}", result);
-                println!("✓ Original WASM functionality works with complete EVM host functions!");
-            }
-            Err(err) => {
-                println!("❌ Call WASM func error: {}", err);
-            }
+    // Test original WASM functionality
+    println!("\n=== Test 1: Original WASM Functionality ===");
+    let args = vec![ZenValue::ZenI32Value(5)];
+    let results = inst.call_wasm_func("fib", &args);
+    match results {
+        Ok(results) => {
+            let result = &results[0];
+            println!("✓ WASM func fib(5) result: {}", result);
+            println!("✓ Original WASM functionality works with complete EVM host functions!");
+        }
+        Err(err) => {
+            println!("❌ Call WASM func error: {}", err);
         }
     }
 
-    // Test complete EVM host functions based on the loaded contract
-    if wasm_path == "simple_token.wasm" {
-        println!("\n=== Test 2: Simple Token Contract ===");
-        
-        // Test 1: Initialize token contract
-        println!("\n--- Testing init_token() function ---");
-        let init_results = inst.call_wasm_func("init_token", &[]);
-        match init_results {
-            Ok(_) => {
-                println!("✓ Simple token contract initialized successfully");
-            }
-            Err(err) => {
-                println!("❌ Token initialization error: {}", err);
-                return;
-            }
-        }
-        
-        // Test 2: Get total supply
-        println!("\n--- Testing get_total_supply() function ---");
-        let supply_results = inst.call_wasm_func("get_total_supply", &[]);
-        match supply_results {
-            Ok(results) => {
-                let total_supply = &results[0];
-                println!("✓ Total supply: {}", total_supply);
-            }
-            Err(err) => {
-                println!("❌ Get total supply error: {}", err);
-            }
-        }
-        
-        // Test 3: Get owner balance
-        println!("\n--- Testing get_owner_balance() function ---");
-        let balance_results = inst.call_wasm_func("get_owner_balance", &[]);
-        match balance_results {
-            Ok(results) => {
-                let owner_balance = &results[0];
-                println!("✓ Owner balance: {}", owner_balance);
-            }
-            Err(err) => {
-                println!("❌ Get owner balance error: {}", err);
-            }
-        }
-        
-        // Test 4: Test generic storage functions
-        println!("\n--- Testing generic storage functions ---");
-        let set_args = vec![ZenValue::ZenI32Value(50), ZenValue::ZenI32Value(12345)];
-        let set_results = inst.call_wasm_func("set_storage", &set_args);
-        match set_results {
-            Ok(results) => {
-                let set_result = &results[0];
-                println!("✓ Set storage result: {}", set_result);
-                
-                // Get the stored value
-                let get_args = vec![ZenValue::ZenI32Value(50)];
-                let get_results = inst.call_wasm_func("get_storage", &get_args);
-                match get_results {
-                    Ok(results) => {
-                        let get_result = &results[0];
-                        println!("✓ Get storage result: {}", get_result);
-                    }
-                    Err(err) => {
-                        println!("❌ Get storage error: {}", err);
-                    }
-                }
-            }
-            Err(err) => {
-                println!("❌ Set storage error: {}", err);
-            }
-        }
-        
-    } else if wasm_path == "token_system.wasm" {
-        println!("\n=== Test 2: Complex Token System Contract ===");
-        
-        // Test 1: Initialize token contract
-        println!("\n--- Testing init_token() function ---");
-        let init_results = inst.call_wasm_func("init_token", &[]);
-        match init_results {
-            Ok(_) => {
-                println!("✓ Token contract initialized successfully");
-            }
-            Err(err) => {
-                println!("❌ Token initialization error: {}", err);
-                println!("⚠️  Skipping remaining tests due to initialization failure");
-                return;
-            }
-        }
-        
-        // Test 2: Get total supply
-        println!("\n--- Testing get_total_supply() function ---");
-        let supply_results = inst.call_wasm_func("get_total_supply", &[]);
-        match supply_results {
-            Ok(results) => {
-                let total_supply = &results[0];
-                println!("✓ Total supply: {}", total_supply);
-            }
-            Err(err) => {
-                println!("❌ Get total supply error: {}", err);
-            }
-        }
-        
-        // Test 3: Get owner balance
-        println!("\n--- Testing get_owner_balance() function ---");
-        let balance_results = inst.call_wasm_func("get_owner_balance", &[]);
-        match balance_results {
-            Ok(results) => {
-                let owner_balance = &results[0];
-                println!("✓ Owner balance: {}", owner_balance);
-            }
-            Err(err) => {
-                println!("❌ Get owner balance error: {}", err);
-            }
-        }
-        
-        // Test 4: Mint tokens
-        println!("\n--- Testing mint(5000) function ---");
-        let mint_args = vec![ZenValue::ZenI32Value(5000)];
-        let mint_results = inst.call_wasm_func("mint", &mint_args);
-        match mint_results {
-            Ok(results) => {
-                let mint_result = &results[0];
-                println!("✓ Mint result: {}", mint_result);
-                
-                // Check updated total supply
-                let supply_results = inst.call_wasm_func("get_total_supply", &[]);
-                match supply_results {
-                    Ok(results) => {
-                        let total_supply = &results[0];
-                        println!("✓ Total supply after mint: {}", total_supply);
-                    }
-                    Err(err) => {
-                        println!("❌ Get total supply after mint error: {}", err);
-                    }
-                }
-            }
-            Err(err) => {
-                println!("❌ Mint error: {}", err);
-            }
-        }
-        
-        // Test 5: Transfer tokens
-        println!("\n--- Testing transfer(1000) function ---");
-        let transfer_args = vec![ZenValue::ZenI32Value(1000)];
-        let transfer_results = inst.call_wasm_func("transfer", &transfer_args);
-        match transfer_results {
-            Ok(results) => {
-                let transfer_result = &results[0];
-                println!("✓ Transfer result: {}", transfer_result);
-                
-                // Check updated owner balance
-                let balance_results = inst.call_wasm_func("get_owner_balance", &[]);
-                match balance_results {
-                    Ok(results) => {
-                        let owner_balance = &results[0];
-                        println!("✓ Owner balance after transfer: {}", owner_balance);
-                    }
-                    Err(err) => {
-                        println!("❌ Get owner balance after transfer error: {}", err);
-                    }
-                }
-            }
-            Err(err) => {
-                println!("❌ Transfer error: {}", err);
-            }
-        }
-        
-        // Test 6: Initialize exchange
-        println!("\n--- Testing init_exchange() function ---");
-        let exchange_init_results = inst.call_wasm_func("init_exchange", &[]);
-        match exchange_init_results {
-            Ok(_) => {
-                println!("✓ Exchange initialized successfully");
-            }
-            Err(err) => {
-                println!("❌ Exchange initialization error: {}", err);
-            }
-        }
-        
-        // Test 7: Get exchange rate
-        println!("\n--- Testing get_exchange_rate() function ---");
-        let rate_results = inst.call_wasm_func("get_exchange_rate", &[]);
-        match rate_results {
-            Ok(results) => {
-                let exchange_rate = &results[0];
-                println!("✓ Exchange rate: {}", exchange_rate);
-            }
-            Err(err) => {
-                println!("❌ Get exchange rate error: {}", err);
-            }
-        }
-        
-        // Test 8: Test multiple storage variables
-        println!("\n--- Testing test_multiple_storage() function ---");
-        let storage_results = inst.call_wasm_func("test_multiple_storage", &[]);
-        match storage_results {
-            Ok(results) => {
-                let storage_result = &results[0];
-                println!("✓ Multiple storage test result: {}", storage_result);
-            }
-            Err(err) => {
-                println!("❌ Multiple storage test error: {}", err);
-            }
-        }
-        
-        // Test 9: Test complex events
-        println!("\n--- Testing test_complex_events() function ---");
-        let events_results = inst.call_wasm_func("test_complex_events", &[]);
-        match events_results {
-            Ok(results) => {
-                let events_result = &results[0];
-                println!("✓ Complex events test result: {}", events_result);
-            }
-            Err(err) => {
-                println!("❌ Complex events test error: {}", err);
-            }
-        }
-        
-        // Test 10: Test contract call
-        println!("\n--- Testing test_contract_call() function ---");
-        let call_results = inst.call_wasm_func("test_contract_call", &[]);
-        match call_results {
-            Ok(results) => {
-                let call_result = &results[0];
-                println!("✓ Contract call test result: {}", call_result);
-            }
-            Err(err) => {
-                println!("❌ Contract call test error: {}", err);
-            }
-        }
-        
-        // Test 11: Test generic storage functions
-        println!("\n--- Testing generic storage functions ---");
-        let set_args = vec![ZenValue::ZenI32Value(50), ZenValue::ZenI32Value(12345)];
-        let set_results = inst.call_wasm_func("set_storage", &set_args);
-        match set_results {
-            Ok(results) => {
-                let set_result = &results[0];
-                println!("✓ Set storage result: {}", set_result);
-                
-                // Get the stored value
-                let get_args = vec![ZenValue::ZenI32Value(50)];
-                let get_results = inst.call_wasm_func("get_storage", &get_args);
-                match get_results {
-                    Ok(results) => {
-                        let get_result = &results[0];
-                        println!("✓ Get storage result: {}", get_result);
-                    }
-                    Err(err) => {
-                        println!("❌ Get storage error: {}", err);
-                    }
-                }
-            }
-            Err(err) => {
-                println!("❌ Set storage error: {}", err);
-            }
-        }
-        
-    } else if wasm_path == "counter.wasm" {
-        println!("\n=== Test 2: Counter Contract EVM Integration ===");
-        
-        // Test getting the initial counter value
-        println!("\n--- Testing get() function ---");
-        let get_results = inst.call_wasm_func("get", &[]);
-        match get_results {
-            Ok(results) => {
-                let counter_value = &results[0];
-                println!("✓ Initial counter value: {}", counter_value);
-            }
-            Err(err) => {
-                println!("❌ Call get() error: {}", err);
-            }
-        }
-        
-        // Test incrementing the counter
-        println!("\n--- Testing increment() function ---");
-        let increment_results = inst.call_wasm_func("increment", &[]);
-        match increment_results {
-            Ok(_) => {
-                println!("✓ Counter incremented successfully");
-                
-                // Check the new value
-                let get_results = inst.call_wasm_func("get", &[]);
-                match get_results {
-                    Ok(results) => {
-                        let counter_value = &results[0];
-                        println!("✓ Counter value after increment: {}", counter_value);
-                    }
-                    Err(err) => {
-                        println!("❌ Call get() after increment error: {}", err);
-                    }
-                }
-            }
-            Err(err) => {
-                println!("❌ Call increment() error: {}", err);
-            }
-        }
-        
-        // Test setting a specific value
-        println!("\n--- Testing set(42) function ---");
-        let set_args = vec![ZenValue::ZenI32Value(42)];
-        let set_results = inst.call_wasm_func("set", &set_args);
-        match set_results {
-            Ok(_) => {
-                println!("✓ Counter set to 42 successfully");
-                
-                // Check the new value
-                let get_results = inst.call_wasm_func("get", &[]);
-                match get_results {
-                    Ok(results) => {
-                        let counter_value = &results[0];
-                        println!("✓ Counter value after set(42): {}", counter_value);
-                    }
-                    Err(err) => {
-                        println!("❌ Call get() after set error: {}", err);
-                    }
-                }
-            }
-            Err(err) => {
-                println!("❌ Call set(42) error: {}", err);
-            }
-        }
-        
-        // Test decrementing the counter
-        println!("\n--- Testing decrement() function ---");
-        let decrement_results = inst.call_wasm_func("decrement", &[]);
-        match decrement_results {
-            Ok(_) => {
-                println!("✓ Counter decremented successfully");
-                
-                // Check the final value
-                let get_results = inst.call_wasm_func("get", &[]);
-                match get_results {
-                    Ok(results) => {
-                        let counter_value = &results[0];
-                        println!("✓ Final counter value after decrement: {}", counter_value);
-                    }
-                    Err(err) => {
-                        println!("❌ Call get() after decrement error: {}", err);
-                    }
-                }
-            }
-            Err(err) => {
-                println!("❌ Call decrement() error: {}", err);
-            }
-        }
-        
-    } else if wasm_path == "evm_test_contract.wasm" {
+    // Test complete EVM host functions if available
+    if wasm_path == "evm_test_contract.wasm" {
         println!("\n=== Test 2: Complete EVM Host Functions Called from WASM Contract ===");
         let evm_results = inst.call_wasm_func("test_evm_functions", &[]);
         match evm_results {
@@ -1425,30 +1059,12 @@ fn main() {
     println!("   ✅ Full type safety with Result-based error handling");
     println!("   ✅ Advanced memory management and validation");
     println!("   ✅ Production-ready error handling and logging");
-    println!("   ✅ WASM module loaded: {}", wasm_path);
+    println!("   ✅ WASM module loaded and compiled");
     println!("   ✅ Enhanced EVM context created and configured");
     println!("   ✅ WASM instance created with complete EVM capabilities");
     println!("   ✅ Original WASM functionality preserved");
     println!("   ✅ Complete EVM host functions available to WASM contracts");
     println!("   ✅ Enhanced EVM context accessible and functional");
-    
-    if wasm_path == "simple_token.wasm" {
-        println!("   ✅ Simple token contract tested successfully");
-        println!("   ✅ Storage operations working correctly");
-        println!("   ✅ Token initialization and balance queries functional");
-        println!("   ✅ Generic storage functions verified");
-    } else if wasm_path == "token_system.wasm" {
-        println!("   ✅ Complex token system contract tested successfully");
-        println!("   ✅ Multiple storage variables working correctly");
-        println!("   ✅ Event logging system fully functional");
-        println!("   ✅ Contract interaction capabilities verified");
-        println!("   ✅ Token minting, transfer, and exchange operations tested");
-        println!("   ✅ Advanced smart contract features demonstrated");
-    } else if wasm_path == "counter.wasm" {
-        println!("   ✅ Counter contract functions tested successfully");
-        println!("   ✅ Storage operations working through EVM host functions");
-        println!("   ✅ Smart contract state management verified");
-    }
     
     println!("\n🚀 The system is ready for production EVM smart contract execution!");
     println!("\n📝 Complete EVM Host Functions Available:");
