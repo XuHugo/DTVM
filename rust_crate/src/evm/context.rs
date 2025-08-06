@@ -17,10 +17,14 @@
 //!
 //! ```rust
 //! use dtvmcore_rust::evm::{MockContext, BlockInfo, TransactionInfo};
+//! use std::rc::Rc;
+//! use std::cell::RefCell;
+//! use std::collections::HashMap;
 //!
 //! // Create a new mock context with contract bytecode
 //! let contract_code = vec![0x60, 0x80, 0x60, 0x40, 0x52]; // Simple contract
-//! let mut context = MockContext::new(contract_code);
+//! let storage = Rc::new(RefCell::new(HashMap::new()));
+//! let mut context = MockContext::new(contract_code, storage);
 //!
 //! // Configure execution environment
 //! context.set_block_number(1000000);
@@ -34,6 +38,7 @@
 
 use std::collections::HashMap;
 use std::cell::RefCell;
+use std::rc::Rc;
 use crate::host_debug;
 use crate::evm::debug::format_hex;
 
@@ -226,7 +231,7 @@ pub struct MockContext {
     /// Contract code with 4-byte length prefix (big-endian)
     contract_code: Vec<u8>,
     /// Storage mapping (hex key -> 32-byte value)
-    storage: RefCell<HashMap<String, Vec<u8>>>,
+    storage: Rc<RefCell<HashMap<String, Vec<u8>>>>,
     /// Call data for the current execution
     call_data: Vec<u8>,
     /// Current contract address
@@ -250,7 +255,7 @@ pub struct MockContext {
 impl MockContext {
     /// Create a new mock context with the given WASM code
     /// The code will be prefixed with a 4-byte big-endian length header
-    pub fn new(wasm_code: Vec<u8>) -> Self {
+    pub fn new(wasm_code: Vec<u8>, storage: Rc<RefCell<HashMap<String, Vec<u8>>>>) -> Self {
         let prefixed_code = Self::create_prefixed_code(&wasm_code);
         
         host_debug!("Created MockContext with original code length: {} bytes, prefixed length: {} bytes", 
@@ -273,7 +278,7 @@ impl MockContext {
         
         Self {
             contract_code: prefixed_code,
-            storage: RefCell::new(HashMap::new()),
+            storage,
             call_data,
             address,
             caller,

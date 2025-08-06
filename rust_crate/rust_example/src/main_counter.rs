@@ -10,9 +10,12 @@
 //! - function decrease(): Decrements the counter
 
 mod evm_bridge;
+extern crate env_logger;
 
 use std::fs;
 use std::rc::Rc;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use dtvmcore_rust::core::{
     host_module::*, instance::*, r#extern::*,
     types::*, runtime::ZenRuntime,
@@ -25,12 +28,6 @@ const COUNT_SELECTOR: [u8; 4] = [0x06, 0x66, 0x1a, 0xbd];     // count()
 const INCREASE_SELECTOR: [u8; 4] = [0xe8, 0x92, 0x7f, 0xbc];  // increase()  
 const DECREASE_SELECTOR: [u8; 4] = [0x2b, 0xae, 0xce, 0xb7];  // decrease()
 
-/// Helper function to create ZenValue from bytes
-fn create_zen_values_from_selector(selector: &[u8; 4]) -> Vec<ZenValue> {
-    // Convert selector bytes to i32 values for WASM function call
-    selector.iter().map(|&b| ZenValue::ZenI32Value(b as i32)).collect()
-}
-
 /// Helper function to set call data for a specific function call
 fn set_function_call_data(context: &mut MockContext, selector: &[u8; 4]) {
     context.set_call_data(selector.to_vec());
@@ -38,6 +35,7 @@ fn set_function_call_data(context: &mut MockContext, selector: &[u8; 4]) {
 }
 
 fn main() {
+    env_logger::init();
     println!("🔢 DTVM Counter Contract Test");
     println!("============================");
     
@@ -45,234 +43,151 @@ fn main() {
     let rt = ZenRuntime::new(None);
     
     // Create EVM host functions for counter contract
-    println!("\n=== Creating EVM Host Functions for Counter ===");
-    
-    // Use complete EVM host functions with camelCase naming (evmabimock.cpp compatible)
+    println!("
+=== Creating EVM Host Functions for Counter ===");
     let counter_host_funcs = create_complete_evm_host_functions();
-    
     println!("✓ Created {} EVM host functions for counter contract", counter_host_funcs.len());
     
     // Register the host module
-    let host_module = rt.create_host_module("env", counter_host_funcs.iter(), true);
-    if let Err(err) = host_module {
-        println!("❌ Host module creation error: {}", err);
-        return;
-    }
+    let host_module = rt.create_host_module("env", counter_host_funcs.iter(), true).expect("Host module creation failed");
     println!("✓ Counter EVM host module registered successfully");
 
     // Load counter WASM module
-    println!("\n=== Loading Counter WASM Module ===");
-    let counter_wasm_bytes = match fs::read("src/counter.wasm") {
-        Ok(bytes) => {
-            println!("✓ Counter WASM file loaded: {} bytes", bytes.len());
-            bytes
-        }
-        Err(err) => {
-            println!("❌ Failed to load counter.wasm: {}", err);
-            return;
-        }
-    };
+    println!("
+=== Loading Counter WASM Module ===");
+    let counter_wasm_bytes = fs::read("src/counter.wasm").expect("Failed to load counter.wasm");
+    println!("✓ Counter WASM file loaded: {} bytes", counter_wasm_bytes.len());
     
-    let maybe_mod = rt.load_module_from_bytes("counter.wasm", &counter_wasm_bytes);
-    if let Err(err) = maybe_mod {
-        println!("❌ Load counter module error: {}", err);
-        return;
-    }
-    let wasm_mod = maybe_mod.unwrap();
+    let wasm_mod = rt.load_module_from_bytes("counter.wasm", &counter_wasm_bytes).expect("Load counter module error");
     println!("✓ Counter WASM module loaded successfully");
 
-    // Create isolation
-    println!("\n=== Creating Isolation ===");
-    let isolation = rt.new_isolation();
-    if let Err(err) = isolation {
-        println!("❌ Create isolation error: {}", err);
-        return;
-    }
-    let isolation = isolation.unwrap();
-    println!("✓ Isolation created");
+    // Create the single, shared storage for the entire test run
+    println!("
+=== Creating Shared EVM Storage ===");
+    let shared_storage = Rc::new(RefCell::new(HashMap::new()));
+    println!("✓ Shared storage created.");
 
-    // Create EVM context for counter contract
-    println!("\n=== Creating Counter EVM Context ===");
-    let mut counter_context = MockContext::new(vec![0x60, 0x80, 0x40, 0x52]); // Simple contract bytecode
-    
-    // Set initial call data (empty for deployment)
-    counter_context.set_call_data(vec![]);
-    println!("✓ Counter EVM context created with empty call data for deployment");
+    // Create a single MockContext that will be used for all calls
+    let mut context = MockContext::new(vec![], shared_storage.clone());
 
-    // Create WASM instance with counter context
-    println!("\n=== Creating Counter WASM Instance ===");
-    let inst = match wasm_mod.new_instance_with_context(isolation, 1000000, counter_context.clone()) {
-        Ok(inst) => inst,
-        Err(err) => {
-            println!("❌ Create counter instance error: {}", err);
-            return;
-        }
-    };
-    println!("✓ Counter WASM instance created with EVM context");
+    println!("
+=== Testing Counter Contract Functions ===");
 
-    // Test counter contract functions
-    println!("\n=== Testing Counter Contract Functions ===");
-    println!("📝 Note: Counter contract uses EVM standard architecture:");
-    println!("   - deploy() function for contract deployment");
-    println!("   - call() function as unified entry point");
-    println!("   - Function selection via call data (first 4 bytes = function selector)");
-    println!("   - Original Solidity functions: increase(), decrease(), count (getter)");
-    
     // Test 1: Deploy the contract first
-    println!("\n--- Test 1: Deploy Counter Contract ---");
-    let deploy_results = inst.call_wasm_func("deploy", &[]);
-    match deploy_results {
-        Ok(results) => {
-            println!("✓ Counter contract deployed successfully");
-            if !results.is_empty() {
-                println!("✓ Deploy result: {} values returned", results.len());
+    println!("
+--- Test 1: Deploy Counter Contract ---");
+    {
+        let isolation = rt.new_isolation().expect("Create isolation error");
+        context.set_call_data(vec![]);
+        
+        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for deploy");
+        
+        match inst.call_wasm_func("deploy", &[]) {
+            Ok(_) => println!("✓ Counter contract deployed successfully"),
+            Err(err) => {
+                println!("❌ Deploy contract error: {}", err);
+                return; // Stop if deploy fails
             }
-            
-            // Check if there's return data in the context
-            if counter_context.has_return_data() {
-                let return_data = counter_context.get_return_data();
-                println!("✓ Deploy return data: {} bytes - {}", return_data.len(), counter_context.get_return_data_hex());
-                println!("✓ Execution status: {}", counter_context.get_execution_status_string());
-            } else {
-                println!("✓ No return data from deploy");
-            }
-        }
-        Err(err) => {
-            println!("❌ Deploy contract error: {}", err);
-            
-            // Even if there's an error, check for return data (might be from finish/revert)
-            if counter_context.has_return_data() {
-                let return_data = counter_context.get_return_data();
-                println!("📋 Return data despite error: {} bytes - {}", return_data.len(), counter_context.get_return_data_hex());
-                println!("📋 Execution status: {}", counter_context.get_execution_status_string());
-            }
-            
-            // Don't return here, continue with tests to see if we can still call functions
-            println!("⚠️  Continuing with tests despite deploy error...");
         }
     }
 
-    // Test 2: Get initial counter value using count() function selector
-    println!("\n--- Test 2: Get Initial Counter Value ---");
-    println!("   📋 Calling count() getter function with proper selector");
-    
-    // Set call data for count() function
-    set_function_call_data(&mut counter_context, &COUNT_SELECTOR);
-    
-    // Re-create isolation and instance with updated context
-    println!("   🔧 Re-creating WASM instance with updated call data...");
-    let isolation = rt.new_isolation().expect("Failed to create isolation for count call");
-    let inst = match wasm_mod.new_instance_with_context(isolation, 1000000, counter_context.clone()) {
-        Ok(inst) => {
-            println!("   ✓ Instance re-created for count call.");
-            inst
-        }
-        Err(err) => {
-            println!("❌ Create instance error for count call: {}", err);
-            return; // Exit if instance creation fails
-        }
-    };
-    
-    let call_results = inst.call_wasm_func("call", &[]);
-    match call_results {
-        Ok(results) => {
-            println!("✓ Counter value retrieved successfully");
-            if !results.is_empty() {
-                println!("✓ Initial counter value: {} values returned", results.len());
-            }
-            else {
-                println!("✓ Counter value call completed (value stored in contract state)");
-            }
-        }
-        Err(err) => {
-            println!("❌ Get counter value error: {}", err);
+    // Test 2: Call increase() function
+    println!("
+--- Test 2: Call increase() Function ---");
+    {
+        let isolation = rt.new_isolation().expect("Create isolation error");
+        set_function_call_data(&mut context, &INCREASE_SELECTOR);
+
+        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for increase");
+
+        match inst.call_wasm_func("call", &[]) {
+            Ok(_) => println!("✓ Increase function completed (state should be updated)"),
+            Err(err) => println!("❌ Increase function error: {}", err),
         }
     }
 
-    // Check for return data
-    if counter_context.has_return_data() {
-        let return_data = counter_context.get_return_data();
-        println!("   📋 Return data: {} bytes - {}", return_data.len(), counter_context.get_return_data_hex());
-        println!("   📋 Status: {}", counter_context.get_execution_status_string());
-    }
-    else {
-        println!("   📋 No return data");
-    }
-    
-    // Test 3: Call increase() function with proper selector
-    println!("\n--- Test 3: Call increase() Function ---");
-    println!("   📋 Setting call data with increase() function selector");
-    
-    // Set call data for increase() function
-    set_function_call_data(&mut counter_context, &INCREASE_SELECTOR);
-    
-    // Re-create isolation and instance with updated context
-    println!("   🔧 Re-creating WASM instance with updated call data...");
-    let isolation = rt.new_isolation().expect("Failed to create isolation for increase call");
-    let inst = match wasm_mod.new_instance_with_context(isolation, 1000000, counter_context.clone()) {
-        Ok(inst) => {
-            println!("   ✓ Instance re-created for increase call.");
-            inst
-        }
-        Err(err) => {
-            println!("❌ Create instance error for increase call: {}", err);
-            return; // Exit if instance creation fails
-        }
-    };
-    
-    let call_results = inst.call_wasm_func("call", &[]);
-    match call_results {
-        Ok(results) => {
-            println!("✓ Increase function call executed");
-            if !results.is_empty() {
-                println!("✓ Results: {} values returned", results.len());
-            }
-            else {
-                println!("✓ Increase function completed (state updated)");
-            }
-        }
-        Err(err) => {
-            println!("❌ Increase function error: {}", err);
+    // Test 3: Get counter value (should be 1)
+    println!("
+--- Test 3: Get Counter Value after Increase ---");
+    {
+        let isolation = rt.new_isolation().expect("Create isolation error");
+        set_function_call_data(&mut context, &COUNT_SELECTOR);
+
+        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for count");
+
+        match inst.call_wasm_func("call", &[]) {
+            Ok(_) => {
+                println!("✓ Count function executed successfully");
+                if context.has_return_data() {
+                    let return_data = context.get_return_data();
+                    println!("   ✅ Return data: {} (expected 0x...01)", context.get_return_data_hex());
+                    assert_eq!(return_data.last().unwrap_or(&0), &1, "Counter should be 1");
+                } else {
+                    println!("   ❌ No return data from count()");
+                }
+            },
+            Err(err) => println!("❌ Get counter value error: {}", err),
         }
     }
-    
-    // Test 4: Call decrease() function with proper selector
-    println!("\n--- Test 4: Call decrease() Function ---");
-    println!("   📋 Setting call data with decrease() function selector");
-    
-    // Set call data for decrease() function
-    set_function_call_data(&mut counter_context, &DECREASE_SELECTOR);
-    
-    // Re-create isolation and instance with updated context
-    println!("   🔧 Re-creating WASM instance with updated call data...");
-    let isolation = rt.new_isolation().expect("Failed to create isolation for decrease call");
-    let inst = match wasm_mod.new_instance_with_context(isolation, 1000000, counter_context.clone()) {
-        Ok(inst) => {
-            println!("   ✓ Instance re-created for decrease call.");
-            inst
+
+    // Test 4: Call decrease() function
+    println!("
+--- Test 4: Call decrease() Function ---");
+    {
+        let isolation = rt.new_isolation().expect("Create isolation error");
+        set_function_call_data(&mut context, &DECREASE_SELECTOR);
+
+        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for decrease");
+
+        match inst.call_wasm_func("call", &[]) {
+            Ok(_) => println!("✓ Decrease function completed (state should be updated)"),
+            Err(err) => println!("❌ Decrease function error: {}", err),
         }
-        Err(err) => {
-            println!("❌ Create instance error for decrease call: {}", err);
-            return; // Exit if instance creation fails
+    }
+
+    // Test 5: Get counter value (should be 0)
+    println!("
+--- Test 5: Get Counter Value after Decrease ---");
+    {
+        let isolation = rt.new_isolation().expect("Create isolation error");
+        set_function_call_data(&mut context, &COUNT_SELECTOR);
+
+        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for count");
+
+        match inst.call_wasm_func("call", &[]) {
+            Ok(_) => {
+                println!("✓ Count function executed successfully");
+                if context.has_return_data() {
+                    let return_data = context.get_return_data();
+                    println!("   ✅ Return data: {} (expected 0x...00)", context.get_return_data_hex());
+                    assert_eq!(return_data.last().unwrap_or(&1), &0, "Counter should be 0");
+                } else {
+                    println!("   ❌ No return data from count()");
+                }
+            },
+            Err(err) => println!("❌ Get counter value error: {}", err),
         }
-    };
-    
-    let call_results = inst.call_wasm_func("call", &[]);
-    match call_results {
-        Ok(results) => {
-            println!("✓ Decrease function call executed");
-            if !results.is_empty() {
-                println!("✓ Results: {} values returned", results.len());
+    }
+
+    // Test 6: Call decrease() again (should revert)
+    println!("
+--- Test 6: Call decrease() on Zero (should revert) ---");
+    {
+        let isolation = rt.new_isolation().expect("Create isolation error");
+        set_function_call_data(&mut context, &DECREASE_SELECTOR);
+
+        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for decrease");
+
+        match inst.call_wasm_func("call", &[]) {
+            Ok(_) => println!("   ❌ Decrease was expected to fail, but it succeeded."),
+            Err(err) => {
+                println!("   ✅ Decrease function reverted as expected.");
+                println!("   Error: {}", err);
+                assert!(context.is_reverted(), "Execution status should be 'reverted'");
             }
-            else {
-                println!("✓ Decrease function completed (state updated)");
-            }
-        }
-        Err(err) => {
-            println!("❌ Decrease function error: {}", err);
         }
     }
     
-    
-    println!("\n🚀 Counter contract is ready for production use!");
+    println!("
+🚀 Counter contract test suite finished!");
 }

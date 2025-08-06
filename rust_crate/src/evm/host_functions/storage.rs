@@ -83,6 +83,7 @@ where
     // Store the value in the context
     context.set_storage_bytes32(&key_hex, value_bytes);
     
+    host_info!("    📦 Stored value: 0x{}", hex::encode(&value_bytes));
     host_info!("Storage store completed: key={}, value_len=32", key_hex);
     Ok(())
 }
@@ -120,6 +121,8 @@ where
     
     // Load the value from storage
     let value_bytes = context.get_storage_bytes32(&key_hex);
+    
+    host_info!("    📤 Loaded value: 0x{}", hex::encode(&value_bytes));
     
     // Write the result to memory
     memory.write_bytes32(result_offset as u32, &value_bytes)

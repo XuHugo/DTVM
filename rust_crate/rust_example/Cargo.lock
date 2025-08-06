@@ -133,8 +133,10 @@ version = "0.1.0"
 dependencies = [
  "cty",
  "dtvmcore_rust",
+ "env_logger",
  "hex",
  "libc",
+ "log",
 ]
 
 [[package]]
