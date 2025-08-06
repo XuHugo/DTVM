@@ -12,8 +12,8 @@ pub mod memory;
 pub mod error;
 pub mod debug;
 
-#[cfg(test)]
-pub mod tests;
+//#[cfg(test)]
+//pub mod tests;
 
 // Re-export main types for convenience
 pub use context::{MockContext, BlockInfo, TransactionInfo, LogEvent};

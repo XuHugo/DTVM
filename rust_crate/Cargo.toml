@@ -64,6 +64,14 @@ hex = { version = "0.4", features = ["std"] }
 log = { version = "0.4", optional = true }
 env_logger = { version = "0.10", optional = true }
 
+# Big integer arithmetic for 256-bit math operations
+num-bigint = "0.4"
+num-traits = "0.2"
+
+# Cryptographic hash functions
+sha2 = "0.10"
+sha3 = "0.10"
+
 [dev-dependencies]
 # Testing dependencies
 criterion = "0.5"

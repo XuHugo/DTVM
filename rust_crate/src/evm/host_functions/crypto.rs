@@ -47,10 +47,16 @@ use crate::core::instance::ZenInstance;
 use crate::evm::context::MockContext;
 use crate::evm::memory::{MemoryAccessor, validate_bytes32_param, validate_data_param};
 use crate::evm::error::HostFunctionResult;
+use crate::evm::debug::format_hex;
 use crate::{host_info, host_error};
+use sha2::{Sha256, Digest};
+use sha3::Keccak256;
 
-/// SHA256 hash function implementation (mock)
+/// SHA256 hash function implementation
 /// Computes the SHA256 hash of the input data and writes it to the result location
+/// 
+/// This implements the NIST SHA-256 standard hash function, which produces a 256-bit (32-byte) hash.
+/// SHA-256 is widely used in Bitcoin and other blockchain systems.
 /// 
 /// Parameters:
 /// - instance: WASM instance pointer
@@ -92,25 +98,20 @@ where
             e
         })?;
 
-    // Generate mock SHA256 hash
-    // In a real implementation, this would use a proper SHA256 library
-    let mut mock_hash = [0u8; 32];
-    mock_hash[0] = 0x12; // Mock SHA256 prefix
+    host_info!("sha256 input data: 0x{}", format_hex(&input_data));
+
+    // Compute SHA256 hash using the sha2 crate
+    let mut hasher = Sha256::new();
+    hasher.update(&input_data);
+    let hash_result = hasher.finalize();
     
-    // Simple mock: use input length and first few bytes to generate "hash"
-    if input_length_u32 > 0 {
-        let len_bytes = (input_length_u32 as u32).to_be_bytes();
-        mock_hash[1..5].copy_from_slice(&len_bytes);
-        
-        // Use first few bytes of input if available
-        let copy_len = std::cmp::min(input_data.len(), 8);
-        if copy_len > 0 {
-            mock_hash[8..8 + copy_len].copy_from_slice(&input_data[..copy_len]);
-        }
-    }
+    // Convert to fixed-size array
+    let hash_bytes: [u8; 32] = hash_result.into();
+
+    host_info!("sha256 result: 0x{}", format_hex(&hash_bytes));
 
     // Write the hash to memory
-    memory.write_bytes32(result_offset_u32, &mock_hash).map_err(|e| {
+    memory.write_bytes32(result_offset_u32, &hash_bytes).map_err(|e| {
         host_error!("Failed to write SHA256 hash at offset {}: {}", result_offset, e);
         e
     })?;
@@ -123,8 +124,12 @@ where
     Ok(())
 }
 
-/// Keccak256 hash function implementation (mock)
+/// Keccak256 hash function implementation
 /// Computes the Keccak256 hash of the input data and writes it to the result location
+/// 
+/// This implements the Keccak-256 hash function used by Ethereum. Note that this is different
+/// from NIST SHA-3, although they are both based on the Keccak algorithm.
+/// Keccak-256 is used for Ethereum addresses, transaction hashes, and storage keys.
 /// 
 /// Parameters:
 /// - instance: WASM instance pointer
@@ -166,29 +171,20 @@ where
             e
         })?;
 
-    // Generate mock Keccak256 hash
-    // In a real implementation, this would use a proper Keccak256 library
-    let mut mock_hash = [0u8; 32];
-    mock_hash[0] = 0x23; // Mock Keccak256 prefix (different from SHA256)
+    host_info!("keccak256 input data: 0x{}", format_hex(&input_data));
+
+    // Compute Keccak256 hash using the sha3 crate
+    let mut hasher = Keccak256::new();
+    hasher.update(&input_data);
+    let hash_result = hasher.finalize();
     
-    // Simple mock: use input length and different pattern
-    if input_length_u32 > 0 {
-        let len_bytes = (input_length_u32 as u32).to_be_bytes();
-        mock_hash[2..6].copy_from_slice(&len_bytes);
-        
-        // Use last few bytes of input if available (different from SHA256)
-        let copy_len = std::cmp::min(input_data.len(), 6);
-        if copy_len > 0 {
-            let start_idx = input_data.len() - copy_len;
-            mock_hash[10..10 + copy_len].copy_from_slice(&input_data[start_idx..]);
-        }
-        
-        // Add some distinguishing pattern
-        mock_hash[31] = (input_length_u32 % 256) as u8;
-    }
+    // Convert to fixed-size array
+    let hash_bytes: [u8; 32] = hash_result.into();
+
+    host_info!("keccak256 result: 0x{}", format_hex(&hash_bytes));
 
     // Write the hash to memory
-    memory.write_bytes32(result_offset_u32, &mock_hash).map_err(|e| {
+    memory.write_bytes32(result_offset_u32, &hash_bytes).map_err(|e| {
         host_error!("Failed to write Keccak256 hash at offset {}: {}", result_offset, e);
         e
     })?;
@@ -255,17 +251,125 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_function_behavior() {
-        // Test that SHA256 and Keccak256 produce different mock results
-        // Test that same input produces same output (deterministic)
-        // Test that different inputs produce different outputs
+    fn test_sha256_known_vectors() {
+        // Test SHA256 with known test vectors
+        use sha2::{Sha256, Digest};
+        
+        // Test empty input
+        let mut hasher = Sha256::new();
+        hasher.update(b"");
+        let result = hasher.finalize();
+        let expected = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        assert_eq!(hex::encode(result), expected);
+        
+        // Test "abc"
+        let mut hasher = Sha256::new();
+        hasher.update(b"abc");
+        let result = hasher.finalize();
+        let expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert_eq!(hex::encode(result), expected);
+        
+        // Test longer input
+        let mut hasher = Sha256::new();
+        hasher.update(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq");
+        let result = hasher.finalize();
+        let expected = "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1";
+        assert_eq!(hex::encode(result), expected);
+    }
+
+    #[test]
+    fn test_keccak256_known_vectors() {
+        // Test Keccak256 with known test vectors
+        use sha3::{Keccak256, Digest};
+        
+        // Test empty input
+        let mut hasher = Keccak256::new();
+        hasher.update(b"");
+        let result = hasher.finalize();
+        let expected = "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470";
+        assert_eq!(hex::encode(result), expected);
+        
+        // Test "abc"
+        let mut hasher = Keccak256::new();
+        hasher.update(b"abc");
+        let result = hasher.finalize();
+        let expected = "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45";
+        assert_eq!(hex::encode(result), expected);
+        
+        // Test Ethereum function signature "transfer(address,uint256)"
+        let mut hasher = Keccak256::new();
+        hasher.update(b"transfer(address,uint256)");
+        let result = hasher.finalize();
+        let expected = "a9059cbb2ab09eb219583f4a59a5d0623ade346d962bcd4e46b11da047c9049b";
+        assert_eq!(hex::encode(result), expected);
+    }
+
+    #[test]
+    fn test_hash_function_differences() {
+        // Test that SHA256 and Keccak256 produce different results for same input
+        use sha2::Sha256;
+        use sha3::Keccak256;
+        use sha2::Digest as Sha2Digest;
+        use sha3::Digest as Sha3Digest;
+        
+        let input = b"Hello, World!";
+        
+        let mut sha256_hasher = Sha256::new();
+        sha256_hasher.update(input);
+        let sha256_result = sha256_hasher.finalize();
+        
+        let mut keccak256_hasher = Keccak256::new();
+        keccak256_hasher.update(input);
+        let keccak256_result = keccak256_hasher.finalize();
+        
+        // Results should be different
+        assert_ne!(sha256_result.as_slice(), keccak256_result.as_slice());
+        
+        // Both should be 32 bytes
+        assert_eq!(sha256_result.len(), 32);
+        assert_eq!(keccak256_result.len(), 32);
+    }
+
+    #[test]
+    fn test_hash_deterministic() {
+        // Test that hash functions are deterministic (same input -> same output)
+        use sha2::{Sha256, Digest};
+        
+        let input = b"deterministic test";
+        
+        let mut hasher1 = Sha256::new();
+        hasher1.update(input);
+        let result1 = hasher1.finalize();
+        
+        let mut hasher2 = Sha256::new();
+        hasher2.update(input);
+        let result2 = hasher2.finalize();
+        
+        assert_eq!(result1, result2);
     }
 
     #[test]
     fn test_hash_edge_cases() {
         // Test with zero-length input
-        // Test with very large input
-        // Test memory boundary conditions
+        use sha2::{Sha256, Digest};
+        
+        let mut hasher = Sha256::new();
+        hasher.update(b"");
+        let result = hasher.finalize();
+        assert_eq!(result.len(), 32);
+        
+        // Test with single byte
+        let mut hasher = Sha256::new();
+        hasher.update(b"a");
+        let result = hasher.finalize();
+        assert_eq!(result.len(), 32);
+        
+        // Test with large input (1MB)
+        let large_input = vec![0x42u8; 1024 * 1024];
+        let mut hasher = Sha256::new();
+        hasher.update(&large_input);
+        let result = hasher.finalize();
+        assert_eq!(result.len(), 32);
     }
 }
 
