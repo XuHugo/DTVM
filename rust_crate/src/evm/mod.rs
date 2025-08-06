@@ -16,7 +16,7 @@ pub mod debug;
 pub mod tests;
 
 // Re-export main types for convenience
-pub use context::{MockContext, BlockInfo, TransactionInfo};
+pub use context::{MockContext, BlockInfo, TransactionInfo, LogEvent};
 pub use host_functions::*;
 pub use error::{HostFunctionError, HostFunctionResult};
 pub use memory::MemoryAccessor;

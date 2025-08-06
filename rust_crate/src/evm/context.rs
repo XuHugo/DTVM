@@ -42,6 +42,18 @@ use std::rc::Rc;
 use crate::host_debug;
 use crate::evm::debug::format_hex;
 
+/// Log event emitted by a contract
+/// Represents an EVM log entry with contract address, data, and topics
+#[derive(Clone, Debug, PartialEq)]
+pub struct LogEvent {
+    /// Address of the contract that emitted the event
+    pub contract_address: [u8; 20],
+    /// Event data (arbitrary bytes)
+    pub data: Vec<u8>,
+    /// Event topics (up to 4 topics, each 32 bytes)
+    pub topics: Vec<[u8; 32]>,
+}
+
 /// Block information for EVM context
 /// Contains all block-related data needed for EVM execution
 #[derive(Clone, Debug, PartialEq)]
@@ -247,9 +259,11 @@ pub struct MockContext {
     /// Transaction information
     tx_info: TransactionInfo,
     /// Return data from contract execution (set by finish function)
-    return_data: RefCell<Vec<u8>>,
+    return_data: Rc<RefCell<Vec<u8>>>,
     /// Execution status (None = running, Some(true) = finished successfully, Some(false) = reverted)
-    execution_status: RefCell<Option<bool>>,
+    execution_status: Rc<RefCell<Option<bool>>>,
+    /// Events emitted during contract execution
+    events: Rc<RefCell<Vec<LogEvent>>>,
 }
 
 impl MockContext {
@@ -286,8 +300,9 @@ impl MockContext {
             chain_id,
             block_info: BlockInfo::default(),
             tx_info: TransactionInfo::default(),
-            return_data: RefCell::new(Vec::new()),
-            execution_status: RefCell::new(None),
+            return_data: Rc::new(RefCell::new(Vec::new())),
+            execution_status: Rc::new(RefCell::new(None)),
+            events: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -769,6 +784,68 @@ impl MockContext {
             Some(true) => "finished",
             Some(false) => "reverted",
         }
+    }
+
+    // ============================================================================
+    // Event Management - For contract event logging
+    // ============================================================================
+
+    /// Add an event to the event log
+    pub fn emit_event(&self, event: LogEvent) {
+        let event_count = self.events.borrow().len();
+        self.events.borrow_mut().push(event.clone());
+        host_debug!("Emitted event #{}: contract=0x{}, topics={}, data_len={}", 
+                   event_count + 1, 
+                   hex::encode(&event.contract_address), 
+                   event.topics.len(), 
+                   event.data.len());
+    }
+
+    /// Get all emitted events
+    pub fn get_events(&self) -> Vec<LogEvent> {
+        self.events.borrow().clone()
+    }
+
+    /// Get the number of emitted events
+    pub fn get_event_count(&self) -> usize {
+        self.events.borrow().len()
+    }
+
+    /// Clear all events
+    pub fn clear_events(&self) {
+        let count = self.events.borrow().len();
+        self.events.borrow_mut().clear();
+        host_debug!("Cleared {} events from context", count);
+    }
+
+    /// Check if any events were emitted
+    pub fn has_events(&self) -> bool {
+        !self.events.borrow().is_empty()
+    }
+
+    /// Get the last emitted event
+    pub fn get_last_event(&self) -> Option<LogEvent> {
+        self.events.borrow().last().cloned()
+    }
+
+    /// Get events by topic filter (first topic only for simplicity)
+    pub fn get_events_by_topic(&self, topic: &[u8; 32]) -> Vec<LogEvent> {
+        self.events.borrow()
+            .iter()
+            .filter(|event| {
+                !event.topics.is_empty() && &event.topics[0] == topic
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Get events by contract address
+    pub fn get_events_by_address(&self, address: &[u8; 20]) -> Vec<LogEvent> {
+        self.events.borrow()
+            .iter()
+            .filter(|event| &event.contract_address == address)
+            .cloned()
+            .collect()
     }
 }
 

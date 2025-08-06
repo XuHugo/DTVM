@@ -16,17 +16,14 @@ use std::fs;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use dtvmcore_rust::core::{
-    host_module::*, instance::*, r#extern::*,
-    types::*, runtime::ZenRuntime,
-};
+use dtvmcore_rust::core::runtime::ZenRuntime;
 use dtvmcore_rust::evm::MockContext;
 use evm_bridge::create_complete_evm_host_functions;
 
 // Counter contract function selectors (first 4 bytes of keccak256(function_signature))
 const COUNT_SELECTOR: [u8; 4] = [0x06, 0x66, 0x1a, 0xbd];     // count()
 const INCREASE_SELECTOR: [u8; 4] = [0xe8, 0x92, 0x7f, 0xbc];  // increase()  
-const DECREASE_SELECTOR: [u8; 4] = [0x2b, 0xae, 0xce, 0xb7];  // decrease()
+const DECREASE_SELECTOR: [u8; 4] = [0xd7, 0x32, 0xd9, 0x55];  // decrease()
 
 /// Helper function to set call data for a specific function call
 fn set_function_call_data(context: &mut MockContext, selector: &[u8; 4]) {
@@ -49,7 +46,7 @@ fn main() {
     println!("✓ Created {} EVM host functions for counter contract", counter_host_funcs.len());
     
     // Register the host module
-    let host_module = rt.create_host_module("env", counter_host_funcs.iter(), true).expect("Host module creation failed");
+    let _host_module = rt.create_host_module("env", counter_host_funcs.iter(), true).expect("Host module creation failed");
     println!("✓ Counter EVM host module registered successfully");
 
     // Load counter WASM module
@@ -68,6 +65,7 @@ fn main() {
     println!("✓ Shared storage created.");
 
     // Create a single MockContext that will be used for all calls
+    // Now return_data and execution_status are also shared via Rc<RefCell<>>
     let mut context = MockContext::new(vec![], shared_storage.clone());
 
     println!("
@@ -185,6 +183,23 @@ fn main() {
                 println!("   Error: {}", err);
                 assert!(context.is_reverted(), "Execution status should be 'reverted'");
             }
+        }
+    }
+    
+    // Test 7: Check if any events were emitted
+    println!("
+--- Test 7: Check Events ---");
+    let events = context.get_events();
+    println!("✓ Total events emitted: {}", events.len());
+    
+    if events.len() > 0 {
+        println!("   📋 Event details:");
+        for (i, event) in events.iter().enumerate() {
+            println!("   Event {}: contract=0x{}, topics={}, data_len={}", 
+                     i + 1, 
+                     hex::encode(&event.contract_address), 
+                     event.topics.len(), 
+                     event.data.len());
         }
     }
     

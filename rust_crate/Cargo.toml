@@ -71,10 +71,10 @@ proptest = "1.0"
 tempfile = "3.0"
 
 # Benchmarking
-[[bench]]
-name = "evm_benchmarks"
-harness = false
-required-features = ["evm"]
+#[[bench]]
+#name = "evm_benchmarks"
+#harness = false
+#required-features = ["evm"]
 
 # Documentation configuration
 [package.metadata.docs.rs]

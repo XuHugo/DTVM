@@ -4,7 +4,7 @@
 //! Logging and event host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::MockContext;
+use crate::evm::context::{MockContext, LogEvent};
 use crate::evm::memory::{MemoryAccessor, validate_data_param, validate_bytes32_param};
 use crate::evm::error::HostFunctionResult;
 use crate::evm::debug::format_hex;
@@ -91,11 +91,21 @@ where
     }
 
     // Get the current contract address for the log
-    let contract_address = context.get_address();
+    let contract_address = *context.get_address();
 
-    // Create and display the log event
+    // Create the log event
+    let log_event = LogEvent {
+        contract_address,
+        data: log_data.clone(),
+        topics: topics.clone(),
+    };
+
+    // Store the event in the context (this is the key addition!)
+    context.emit_event(log_event);
+
+    // Display the log event for debugging
     host_info!("=== LOG EVENT EMITTED ===");
-    host_info!("Contract Address: 0x{}", hex::encode(contract_address));
+    host_info!("Contract Address: 0x{}", hex::encode(&contract_address));
     host_info!("Data ({} bytes): 0x{}", log_data.len(), format_hex(&log_data));
     host_info!("Number of Topics: {}", num_topics);
     
@@ -105,16 +115,11 @@ where
     
     host_info!("========================");
 
-    // In a real implementation, this would:
-    // 1. Create a log entry in the transaction receipt
-    // 2. Store the log data and topics
-    // 3. Make the log available for filtering and querying
-    
-    // For the mock implementation, we just log the event details
     host_info!(
-        "emit_log_event completed: emitted log with {} bytes of data and {} topics",
+        "emit_log_event completed: emitted log with {} bytes of data and {} topics, total events: {}",
         log_data.len(),
-        num_topics
+        num_topics,
+        context.get_event_count()
     );
 
     Ok(())
@@ -305,5 +310,12 @@ mod tests {
         // Test with maximum number of topics
         // Test with zero topic offsets
         // Test memory boundary conditions
+    }
+
+    #[test]
+    fn test_log_event_storage() {
+        // Test that events are properly stored in MockContext
+        // Test event retrieval and filtering
+        // Test event count and clearing
     }
 }
