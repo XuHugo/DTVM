@@ -241,6 +241,10 @@ pub struct MockContext {
     block_info: BlockInfo,
     /// Transaction information
     tx_info: TransactionInfo,
+    /// Return data from contract execution (set by finish function)
+    return_data: RefCell<Vec<u8>>,
+    /// Execution status (None = running, Some(true) = finished successfully, Some(false) = reverted)
+    execution_status: RefCell<Option<bool>>,
 }
 
 impl MockContext {
@@ -277,6 +281,8 @@ impl MockContext {
             chain_id,
             block_info: BlockInfo::default(),
             tx_info: TransactionInfo::default(),
+            return_data: RefCell::new(Vec::new()),
+            execution_status: RefCell::new(None),
         }
     }
 
@@ -677,6 +683,87 @@ impl MockContext {
         }
         
         copy_len
+    }
+
+    // ============================================================================
+    // Return Data Management - For contract execution results
+    // ============================================================================
+
+    /// Set the return data from contract execution (called by finish function)
+    pub fn set_return_data(&self, data: Vec<u8>) {
+        let data_len = data.len();
+        *self.return_data.borrow_mut() = data;
+        *self.execution_status.borrow_mut() = Some(true); // Mark as finished successfully
+        host_debug!("Set return data: {} bytes", data_len);
+    }
+
+    /// Set the return data from a slice
+    pub fn set_return_data_from_slice(&self, data: &[u8]) {
+        self.set_return_data(data.to_vec());
+    }
+
+    /// Get the return data reference
+    pub fn get_return_data(&self) -> Vec<u8> {
+        self.return_data.borrow().clone()
+    }
+
+    /// Get the return data as slice
+    pub fn get_return_data_slice(&self) -> Vec<u8> {
+        self.return_data.borrow().clone()
+    }
+
+    /// Get the return data size
+    pub fn get_return_data_size(&self) -> usize {
+        self.return_data.borrow().len()
+    }
+
+    /// Check if there is return data
+    pub fn has_return_data(&self) -> bool {
+        !self.return_data.borrow().is_empty()
+    }
+
+    /// Get return data as hex string
+    pub fn get_return_data_hex(&self) -> String {
+        format!("0x{}", hex::encode(&*self.return_data.borrow()))
+    }
+
+    /// Clear the return data
+    pub fn clear_return_data(&self) {
+        self.return_data.borrow_mut().clear();
+        *self.execution_status.borrow_mut() = None;
+        host_debug!("Cleared return data");
+    }
+
+    /// Set execution status to reverted (called by revert function)
+    pub fn set_reverted(&self, revert_data: Vec<u8>) {
+        let data_len = revert_data.len();
+        *self.return_data.borrow_mut() = revert_data;
+        *self.execution_status.borrow_mut() = Some(false); // Mark as reverted
+        host_debug!("Set reverted with {} bytes of revert data", data_len);
+    }
+
+    /// Check if execution finished successfully
+    pub fn is_finished(&self) -> bool {
+        matches!(*self.execution_status.borrow(), Some(true))
+    }
+
+    /// Check if execution was reverted
+    pub fn is_reverted(&self) -> bool {
+        matches!(*self.execution_status.borrow(), Some(false))
+    }
+
+    /// Check if execution is still running
+    pub fn is_running(&self) -> bool {
+        self.execution_status.borrow().is_none()
+    }
+
+    /// Get execution status as string
+    pub fn get_execution_status_string(&self) -> &'static str {
+        match *self.execution_status.borrow() {
+            None => "running",
+            Some(true) => "finished",
+            Some(false) => "reverted",
+        }
     }
 }
 

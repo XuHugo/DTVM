@@ -41,17 +41,18 @@ where
 
     host_info!("finish: execution completed successfully with {} bytes of return data", return_data.len());
     
-    // In a real implementation, this would set the return data and terminate execution
-    // For now, we just log the successful completion
-    // The actual termination would be handled by the WASM runtime
+    // Store the return data in the MockContext so it can be accessed externally
+    let context = instance.extra_ctx.as_ref();
+    context.set_return_data(return_data.clone());
     
-    // Set an exception to terminate execution (this mimics the C++ implementation)
-    // In the C++ version, this calls instance->setExceptionByHostapi()
-    host_warn!("finish: setting termination exception (execution should stop here)");
+    host_info!("finish: return data stored in context, hex: 0x{}", hex::encode(&return_data));
     
-    // Return an error to indicate execution should terminate
-    // This is not a real error, but a way to signal successful termination
-    Err(crate::evm::error::execution_error("Execution finished successfully", "finish"))
+    // Successfully finish execution - exit with code 0 (success)
+    host_info!("finish: execution completed successfully, exiting with code 0");
+    instance.exit(0);
+    
+    // This should not be reached, but return Ok for completeness
+    Ok(())
 }
 
 /// Revert execution and return data (REVERT opcode)
@@ -86,17 +87,18 @@ where
 
     host_warn!("revert: execution reverted with {} bytes of revert data", revert_data.len());
     
-    // In a real implementation, this would set the revert data and terminate execution
-    // The revert data would be available to the caller
+    // Store the revert data in the MockContext so it can be accessed externally
+    let context = instance.extra_ctx.as_ref();
+    context.set_reverted(revert_data.clone());
     
-    // Set an exception to terminate execution with revert
-    host_error!("revert: setting revert exception (execution should stop here)");
+    host_info!("revert: revert data stored in context, hex: 0x{}", hex::encode(&revert_data));
     
-    // Return an error to indicate execution should terminate with revert
-    Err(crate::evm::error::execution_error(
-        &format!("Execution reverted with {} bytes of data", revert_data.len()),
-        "revert"
-    ))
+    // Revert execution - exit with code 1 (revert)
+    host_warn!("revert: execution reverted, exiting with code 1");
+    instance.exit(1);
+    
+    // This should not be reached, but return Ok for completeness
+    Ok(())
 }
 
 /// Invalid operation (INVALID opcode)
@@ -114,14 +116,12 @@ where
 
     host_error!("invalid: EVM invalid operation encountered");
     
-    // In a real implementation, this would terminate execution immediately
-    // This represents an invalid EVM opcode or operation
+    // Invalid operation - exit with code 2 (invalid operation)
+    host_error!("invalid: invalid EVM operation, exiting with code 2");
+    instance.exit(2);
     
-    // Set an exception to terminate execution with invalid operation
-    host_error!("invalid: setting invalid operation exception (execution should stop here)");
-    
-    // Return an error to indicate invalid operation
-    Err(crate::evm::error::execution_error("Invalid EVM operation", "invalid"))
+    // This should not be reached, but return Ok for completeness
+    Ok(())
 }
 
 /// Self-destruct the contract (SELFDESTRUCT opcode)
@@ -159,11 +159,12 @@ where
     // 2. Mark the contract for deletion
     // 3. Terminate execution
     
-    // Set an exception to terminate execution with self-destruct
-    host_error!("self_destruct: setting self-destruct exception (execution should stop here)");
+    // Self-destruct - exit with code 3 (self-destruct)
+    host_warn!("self_destruct: contract self-destructed, exiting with code 3");
+    instance.exit(3);
     
-    // Return an error to indicate execution should terminate due to self-destruct
-    Err(crate::evm::error::execution_error("Contract self-destructed", "self_destruct"))
+    // This should not be reached, but return Ok for completeness
+    Ok(())
 }
 
 /// Get the size of the return data from the last call

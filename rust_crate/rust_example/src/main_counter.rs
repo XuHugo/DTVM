@@ -25,10 +25,15 @@ const COUNT_SELECTOR: [u8; 4] = [0x06, 0x66, 0x1a, 0xbd];     // count()
 const INCREASE_SELECTOR: [u8; 4] = [0xe8, 0x92, 0x7f, 0xbc];  // increase()  
 const DECREASE_SELECTOR: [u8; 4] = [0x2b, 0xae, 0xce, 0xb7];  // decrease()
 
-/// Helper function to set call data for a specific function call
-fn set_function_call_data(context: &mut MockContext, selector: &[u8; 4]) {
-    context.set_call_data(selector.to_vec());
-    println!("   📋 Set call data with function selector: 0x{}", hex::encode(selector));
+/// Helper function to create ZenValue from bytes
+fn create_zen_values_from_selector(selector: &[u8; 4]) -> Vec<ZenValue> {
+    // Convert selector bytes to i32 values for WASM function call
+    selector.iter().map(|&b| ZenValue::ZenI32Value(b as i32)).collect()
+}
+
+/// Helper function to create a single i32 parameter
+fn create_function_id_param(function_id: i32) -> Vec<ZenValue> {
+    vec![ZenValue::ZenI32Value(function_id)]
 }
 
 fn main() {
@@ -121,82 +126,155 @@ fn main() {
             if !results.is_empty() {
                 println!("✓ Deploy result: {} values returned", results.len());
             }
+            
+            // Check if there's return data in the context
+            if counter_context.has_return_data() {
+                let return_data = counter_context.get_return_data();
+                println!("✓ Deploy return data: {} bytes - {}", return_data.len(), counter_context.get_return_data_hex());
+                println!("✓ Execution status: {}", counter_context.get_execution_status_string());
+            } else {
+                println!("✓ No return data from deploy");
+            }
         }
         Err(err) => {
             println!("❌ Deploy contract error: {}", err);
-            return; // Exit if deployment fails
+            
+            // Even if there's an error, check for return data (might be from finish/revert)
+            if counter_context.has_return_data() {
+                let return_data = counter_context.get_return_data();
+                println!("📋 Return data despite error: {} bytes - {}", return_data.len(), counter_context.get_return_data_hex());
+                println!("📋 Execution status: {}", counter_context.get_execution_status_string());
+            }
+            
+            // Don't return here, continue with tests to see if we can still call functions
+            println!("⚠️  Continuing with tests despite deploy error...");
         }
     }
     
-    // Test 2: Get initial counter value using count() function selector
-    println!("\n--- Test 2: Get Initial Counter Value ---");
-    println!("   📋 Calling count() getter function with proper selector");
+    // Test 2: Try different parameter approaches for call function
+    println!("\n--- Test 2: Test Different Parameter Approaches ---");
     
-    // Set call data for count() function
-    set_function_call_data(&mut counter_context, &COUNT_SELECTOR);
+    // Approach 1: Call with no parameters (original EVM way)
+    println!("   📋 Approach 1: Call with no parameters");
     
-    // Note: In a real implementation, we would need to update the context in the instance
-    // For now, we demonstrate the concept
+    // Clear previous return data
+    counter_context.clear_return_data();
+    
     let call_results = inst.call_wasm_func("call", &[]);
     match call_results {
         Ok(results) => {
-            println!("✓ Counter value retrieved successfully");
-            if !results.is_empty() {
-                println!("✓ Initial counter value: {} values returned", results.len());
-            } else {
-                println!("✓ Counter value call completed (value stored in contract state)");
-            }
+            println!("   ✓ No-parameter call succeeded: {} values returned", results.len());
         }
         Err(err) => {
-            println!("❌ Get counter value error: {}", err);
+            println!("   ❌ No-parameter call error: {}", err);
         }
     }
     
-    // Test 3: Call increase() function with proper selector
-    println!("\n--- Test 3: Call increase() Function ---");
-    println!("   📋 Setting call data with increase() function selector");
+    // Check for return data
+    if counter_context.has_return_data() {
+        let return_data = counter_context.get_return_data();
+        println!("   📋 Return data: {} bytes - {}", return_data.len(), counter_context.get_return_data_hex());
+        println!("   📋 Status: {}", counter_context.get_execution_status_string());
+    } else {
+        println!("   📋 No return data");
+    }
     
-    // Set call data for increase() function
-    set_function_call_data(&mut counter_context, &INCREASE_SELECTOR);
-    
-    // Note: In a real implementation, we would need to update the context in the instance
-    // For now, we demonstrate the concept
-    let call_results = inst.call_wasm_func("call", &[]);
+    // Approach 2: Try with function ID as parameter
+    println!("   📋 Approach 2: Call with function ID parameter");
+    let function_id_params = create_function_id_param(0); // Try function ID 0 (count)
+    let call_results = inst.call_wasm_func("call", &function_id_params);
     match call_results {
         Ok(results) => {
-            println!("✓ Increase function call executed");
-            if !results.is_empty() {
-                println!("✓ Results: {} values returned", results.len());
-            } else {
-                println!("✓ Increase function completed (state updated)");
-            }
+            println!("   ✓ Function ID call succeeded: {} values returned", results.len());
         }
         Err(err) => {
-            println!("❌ Increase function error: {}", err);
+            println!("   ❌ Function ID call error: {}", err);
         }
     }
     
-    // Test 4: Call decrease() function with proper selector
-    println!("\n--- Test 4: Call decrease() Function ---");
-    println!("   📋 Setting call data with decrease() function selector");
-    
-    // Set call data for decrease() function
-    set_function_call_data(&mut counter_context, &DECREASE_SELECTOR);
-    
-    // Note: In a real implementation, we would need to update the context in the instance
-    // For now, we demonstrate the concept
-    let call_results = inst.call_wasm_func("call", &[]);
+    // Approach 3: Try with selector bytes as parameters
+    println!("   📋 Approach 3: Call with selector bytes as parameters");
+    let selector_params = create_zen_values_from_selector(&COUNT_SELECTOR);
+    let call_results = inst.call_wasm_func("call", &selector_params);
     match call_results {
         Ok(results) => {
-            println!("✓ Decrease function call executed");
-            if !results.is_empty() {
-                println!("✓ Results: {} values returned", results.len());
-            } else {
-                println!("✓ Decrease function completed (state updated)");
-            }
+            println!("   ✓ Selector bytes call succeeded: {} values returned", results.len());
         }
         Err(err) => {
-            println!("❌ Decrease function error: {}", err);
+            println!("   ❌ Selector bytes call error: {}", err);
+        }
+    }
+    
+    // Test 3: Try to call increase function with different approaches
+    println!("\n--- Test 3: Test increase() Function Calls ---");
+    
+    // Approach 1: Try with increase function ID
+    println!("   📋 Approach 1: Call with increase function ID (1)");
+    let increase_id_params = create_function_id_param(1);
+    let call_results = inst.call_wasm_func("call", &increase_id_params);
+    match call_results {
+        Ok(results) => {
+            println!("   ✓ Increase ID call succeeded: {} values returned", results.len());
+        }
+        Err(err) => {
+            println!("   ❌ Increase ID call error: {}", err);
+        }
+    }
+    
+    // Approach 2: Try with increase selector
+    println!("   📋 Approach 2: Call with increase selector bytes");
+    let increase_selector_params = create_zen_values_from_selector(&INCREASE_SELECTOR);
+    let call_results = inst.call_wasm_func("call", &increase_selector_params);
+    match call_results {
+        Ok(results) => {
+            println!("   ✓ Increase selector call succeeded: {} values returned", results.len());
+        }
+        Err(err) => {
+            println!("   ❌ Increase selector call error: {}", err);
+        }
+    }
+    
+    // Approach 3: Try with single i32 parameter (selector as u32)
+    println!("   📋 Approach 3: Call with selector as single u32");
+    let selector_u32 = u32::from_be_bytes(INCREASE_SELECTOR) as i32;
+    let single_param = vec![ZenValue::ZenI32Value(selector_u32)];
+    let call_results = inst.call_wasm_func("call", &single_param);
+    match call_results {
+        Ok(results) => {
+            println!("   ✓ Single u32 call succeeded: {} values returned", results.len());
+        }
+        Err(err) => {
+            println!("   ❌ Single u32 call error: {}", err);
+        }
+    }
+    
+    // Test 4: Try to call decrease function
+    println!("\n--- Test 4: Test decrease() Function Calls ---");
+    
+    // Try with decrease function ID
+    println!("   📋 Trying decrease with function ID (2)");
+    let decrease_id_params = create_function_id_param(2);
+    let call_results = inst.call_wasm_func("call", &decrease_id_params);
+    match call_results {
+        Ok(results) => {
+            println!("   ✓ Decrease ID call succeeded: {} values returned", results.len());
+        }
+        Err(err) => {
+            println!("   ❌ Decrease ID call error: {}", err);
+        }
+    }
+    
+    // Try with decrease selector as single u32
+    println!("   📋 Trying decrease with selector as u32");
+    let decrease_selector_u32 = u32::from_be_bytes(DECREASE_SELECTOR) as i32;
+    let decrease_single_param = vec![ZenValue::ZenI32Value(decrease_selector_u32)];
+    let call_results = inst.call_wasm_func("call", &decrease_single_param);
+    match call_results {
+        Ok(results) => {
+            println!("   ✓ Decrease u32 call succeeded: {} values returned", results.len());
+        }
+        Err(err) => {
+            println!("   ❌ Decrease u32 call error: {}", err);
         }
     }
     
