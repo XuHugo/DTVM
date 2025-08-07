@@ -4,7 +4,7 @@
 //! Logging and event host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::{MockContext, LogEvent};
+use crate::evm::traits::{EvmContext, LogEvent};
 use crate::evm::memory::{MemoryAccessor, validate_data_param, validate_bytes32_param};
 use crate::evm::error::HostFunctionResult;
 use crate::evm::debug::format_hex;
@@ -33,7 +33,7 @@ pub fn emit_log_event<T>(
     topic4_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!(
         "emit_log_event called: data_offset={}, length={}, num_topics={}, topics=[{}, {}, {}, {}]",
@@ -47,7 +47,7 @@ where
     );
 
     let memory = MemoryAccessor::new(instance);
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
 
     // Validate number of topics
     if num_topics < 0 || num_topics > 4 {
@@ -91,11 +91,11 @@ where
     }
 
     // Get the current contract address for the log
-    let contract_address = *context.get_address();
+    let contract_address = context.get_address();
 
     // Create the log event
     let log_event = LogEvent {
-        contract_address,
+        contract_address: *contract_address,
         data: log_data.clone(),
         topics: topics.clone(),
     };
@@ -119,7 +119,7 @@ where
         "emit_log_event completed: emitted log with {} bytes of data and {} topics, total events: {}",
         log_data.len(),
         num_topics,
-        context.get_event_count()
+        context.get_events().len()
     );
 
     Ok(())
@@ -138,7 +138,7 @@ pub fn emit_log0<T>(
     length: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     emit_log_event(instance, data_offset, length, 0, 0, 0, 0, 0)
 }
@@ -158,7 +158,7 @@ pub fn emit_log1<T>(
     topic1_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     emit_log_event(instance, data_offset, length, 1, topic1_offset, 0, 0, 0)
 }
@@ -180,7 +180,7 @@ pub fn emit_log2<T>(
     topic2_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     emit_log_event(instance, data_offset, length, 2, topic1_offset, topic2_offset, 0, 0)
 }
@@ -204,7 +204,7 @@ pub fn emit_log3<T>(
     topic3_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     emit_log_event(instance, data_offset, length, 3, topic1_offset, topic2_offset, topic3_offset, 0)
 }
@@ -230,7 +230,7 @@ pub fn emit_log4<T>(
     topic4_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     emit_log_event(instance, data_offset, length, 4, topic1_offset, topic2_offset, topic3_offset, topic4_offset)
 }
@@ -271,7 +271,6 @@ fn validate_log_params(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::MockContext;
 
     // Note: These tests would require a proper ZenInstance setup
     // For now, they serve as documentation of expected behavior

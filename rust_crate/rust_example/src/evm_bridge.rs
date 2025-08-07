@@ -11,7 +11,7 @@ use dtvmcore_rust::core::{
     host_module::*, instance::*, r#extern::*,
     types::*,
 };
-use dtvmcore_rust::evm::MockContext;
+use crate::mock_context::MockContext;
 use cty;
 
 pub type MockInstance = ZenInstance<MockContext>;

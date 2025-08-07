@@ -17,7 +17,9 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use dtvmcore_rust::core::runtime::ZenRuntime;
-use dtvmcore_rust::evm::MockContext;
+use dtvmcore_rust::evm::EvmContext;
+mod mock_context;
+use mock_context::MockContext;
 use evm_bridge::create_complete_evm_host_functions;
 
 // Counter contract function selectors (first 4 bytes of keccak256(function_signature))

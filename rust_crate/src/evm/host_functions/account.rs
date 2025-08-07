@@ -4,7 +4,7 @@
 //! Account and address related host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::{MockContext, AccountBalanceProvider};
+use crate::evm::traits::{EvmContext, AccountBalanceProvider};
 use crate::evm::memory::{MemoryAccessor, validate_address_param, validate_bytes32_param};
 use crate::evm::error::HostFunctionResult;
 use crate::{host_info, host_error};
@@ -20,11 +20,11 @@ pub fn get_address<T>(
     result_offset: i32
 ) -> HostFunctionResult<()>
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
     host_info!("get_address called: result_offset={}", result_offset);
     
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate the result offset
@@ -55,11 +55,11 @@ pub fn get_caller<T>(
     result_offset: i32
 ) -> HostFunctionResult<()>
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
     host_info!("get_caller called: result_offset={}", result_offset);
     
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate the result offset
@@ -90,18 +90,18 @@ pub fn get_tx_origin<T>(
     result_offset: i32
 ) -> HostFunctionResult<()>
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
     host_info!("get_tx_origin called: result_offset={}", result_offset);
     
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate the result offset
     let offset = validate_address_param(instance, result_offset)?;
     
     // Get the transaction origin address
-    let origin = context.get_tx_info().get_origin();
+    let origin = context.get_tx_origin();
     
     // Write the address to memory
     memory.write_address(offset, origin)
@@ -125,11 +125,11 @@ pub fn get_call_value<T>(
     result_offset: i32
 ) -> HostFunctionResult<()>
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
     host_info!("get_call_value called: result_offset={}", result_offset);
     
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate the result offset
@@ -160,11 +160,11 @@ pub fn get_chain_id<T>(
     result_offset: i32
 ) -> HostFunctionResult<()>
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
     host_info!("get_chain_id called: result_offset={}", result_offset);
     
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate the result offset
@@ -200,7 +200,7 @@ pub fn get_external_balance<T>(
     result_offset: i32
 ) -> HostFunctionResult<()>
 where 
-    T: AsRef<MockContext> + crate::evm::context::AccountBalanceProvider
+    T: EvmContext + AccountBalanceProvider
 {
     host_info!("get_external_balance called: addr_offset={}, result_offset={}", addr_offset, result_offset);
     
@@ -239,7 +239,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::MockContext;
     
     // Note: These tests would require a proper ZenInstance setup
     // For now, they serve as documentation of expected behavior
@@ -255,7 +254,7 @@ mod tests {
     fn test_value_functions() {
         // Test get_call_value returns the call value
         // Test get_chain_id returns the chain ID
-        // Test get_external_balance returns mock balance
+        // Test get_external_balance returns balance from provider
     }
     
     #[test]

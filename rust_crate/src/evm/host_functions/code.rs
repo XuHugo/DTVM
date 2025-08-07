@@ -4,7 +4,8 @@
 //! Code related host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::{MockContext, ExternalCodeProvider};
+use crate::evm::traits::EvmContext;
+use crate::evm::traits::ExternalCodeProvider;
 use crate::evm::memory::{MemoryAccessor, validate_address_param, validate_bytes32_param, validate_data_param};
 use crate::evm::error::HostFunctionResult;
 use crate::{host_info, host_error};
@@ -19,9 +20,9 @@ use crate::{host_info, host_error};
 /// - The size of the contract code as i32
 pub fn get_code_size<T>(instance: &ZenInstance<T>) -> i32
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let code_size = context.get_code_size();
     
     host_info!("get_code_size called, returning: {}", code_size);
@@ -43,7 +44,7 @@ pub fn code_copy<T>(
     length: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!(
         "code_copy called: result_offset={}, code_offset={}, length={}",
@@ -52,7 +53,7 @@ where
         length
     );
 
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate parameters
@@ -104,7 +105,7 @@ pub fn get_external_code_size<T>(
     addr_offset: i32,
 ) -> HostFunctionResult<i32>
 where
-    T: AsRef<MockContext> + ExternalCodeProvider,
+    T: EvmContext + ExternalCodeProvider,
 {
     host_info!("get_external_code_size called: addr_offset={}", addr_offset);
 
@@ -151,7 +152,7 @@ pub fn get_external_code_hash<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext> + ExternalCodeProvider,
+    T: EvmContext + ExternalCodeProvider,
 {
     host_info!(
         "get_external_code_hash called: addr_offset={}, result_offset={}",
@@ -224,7 +225,7 @@ pub fn external_code_copy<T>(
     length: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext> + ExternalCodeProvider,
+    T: EvmContext + ExternalCodeProvider,
 {
     host_info!(
         "external_code_copy called: addr_offset={}, result_offset={}, code_offset={}, length={}",
@@ -318,7 +319,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::MockContext;
 
     // Note: These tests would require a proper ZenInstance setup
     // For now, they serve as documentation of expected behavior

@@ -37,7 +37,7 @@
 //! ```
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::MockContext;
+use crate::evm::traits::EvmContext;
 use crate::evm::memory::MemoryAccessor;
 use crate::evm::error::{HostFunctionResult, out_of_bounds_error};
 use crate::{host_info, host_error};
@@ -55,12 +55,12 @@ pub fn storage_store<T>(
     value_bytes_offset: i32
 ) -> HostFunctionResult<()> 
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
     host_info!("storage_store called: key_offset={}, value_offset={}", key_bytes_offset, value_bytes_offset);
     
     // Get the MockContext from the instance
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate and read the storage key (32 bytes)
@@ -101,12 +101,12 @@ pub fn storage_load<T>(
     result_offset: i32
 ) -> HostFunctionResult<()>
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
     host_info!("storage_load called: key_offset={}, result_offset={}", key_bytes_offset, result_offset);
     
     // Get the MockContext from the instance
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate and read the storage key (32 bytes)
@@ -151,7 +151,6 @@ fn validate_storage_params(key_offset: i32, value_or_result_offset: i32) -> Host
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::MockContext;
     
     // Note: These tests would require a proper ZenInstance setup
     // For now, they serve as documentation of expected behavior

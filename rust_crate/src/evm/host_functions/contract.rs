@@ -4,10 +4,11 @@
 //! Contract interaction host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::{MockContext, ContractCallProvider};
+use crate::evm::traits::EvmContext;
+use crate::evm::traits::ContractCallProvider;
 use crate::evm::memory::{MemoryAccessor, validate_address_param, validate_bytes32_param, validate_data_param};
 use crate::evm::error::HostFunctionResult;
-use crate::{host_info, host_error, host_warn};
+use crate::{host_info, host_error};
 
 /// Call another contract (CALL opcode)
 /// Performs a call to another contract with the specified parameters
@@ -34,7 +35,7 @@ pub fn call_contract<T>(
     data_length: i32,
 ) -> HostFunctionResult<i32>
 where
-    T: AsRef<MockContext> + ContractCallProvider,
+    T: EvmContext + ContractCallProvider,
 {
     host_info!(
         "call_contract called: gas={}, addr_offset={}, value_offset={}, data_offset={}, data_length={}",
@@ -72,7 +73,7 @@ where
     })?;
 
     // Get the caller address from context
-    let caller_address = *context.as_ref().get_caller();
+    let caller_address = context.get_caller();
 
     host_info!("    📞 Calling contract: target=0x{}, caller=0x{}, value=0x{}, data_len={}", 
                hex::encode(&target_address), hex::encode(&caller_address), 
@@ -82,7 +83,7 @@ where
     let result = context.call_contract(&target_address, &caller_address, &call_value, &call_data, gas);
 
     // Store the return data in the context for later retrieval
-    context.as_ref().set_return_data(result.return_data.clone());
+    context.set_return_data(result.return_data.clone());
 
     let success_code = if result.success { 1 } else { 0 };
     host_info!("call_contract completed: success={}, return_data_len={}, gas_used={}", 
@@ -116,7 +117,7 @@ pub fn call_code<T>(
     data_length: i32,
 ) -> HostFunctionResult<i32>
 where
-    T: AsRef<MockContext> + ContractCallProvider,
+    T: EvmContext + ContractCallProvider,
 {
     host_info!(
         "call_code called: gas={}, addr_offset={}, value_offset={}, data_offset={}, data_length={}",
@@ -152,7 +153,7 @@ where
     })?;
 
     // Get the caller address from context
-    let caller_address = *context.as_ref().get_caller();
+    let caller_address = context.get_caller();
 
     host_info!("    📞 Call code: target=0x{}, caller=0x{}, value=0x{}, data_len={}", 
                hex::encode(&target_address), hex::encode(&caller_address), 
@@ -162,7 +163,7 @@ where
     let result = context.call_code(&target_address, &caller_address, &call_value, &call_data, gas);
 
     // Store the return data in the context for later retrieval
-    context.as_ref().set_return_data(result.return_data.clone());
+    context.set_return_data(result.return_data.clone());
 
     let success_code = if result.success { 1 } else { 0 };
     host_info!("call_code completed: success={}, return_data_len={}, gas_used={}", 
@@ -194,7 +195,7 @@ pub fn call_delegate<T>(
     data_length: i32,
 ) -> HostFunctionResult<i32>
 where
-    T: AsRef<MockContext> + ContractCallProvider,
+    T: EvmContext + ContractCallProvider,
 {
     host_info!(
         "call_delegate called: gas={}, addr_offset={}, data_offset={}, data_length={}",
@@ -223,7 +224,7 @@ where
     })?;
 
     // Get the caller address from context (for delegate call, this preserves the original caller)
-    let caller_address = *context.as_ref().get_caller();
+    let caller_address = context.get_caller();
 
     host_info!("    📞 Delegate call: target=0x{}, caller=0x{}, data_len={}", 
                hex::encode(&target_address), hex::encode(&caller_address), call_data.len());
@@ -232,7 +233,7 @@ where
     let result = context.call_delegate(&target_address, &caller_address, &call_data, gas);
 
     // Store the return data in the context for later retrieval
-    context.as_ref().set_return_data(result.return_data.clone());
+    context.set_return_data(result.return_data.clone());
 
     let success_code = if result.success { 1 } else { 0 };
     host_info!("call_delegate completed: success={}, return_data_len={}, gas_used={}", 
@@ -264,7 +265,7 @@ pub fn call_static<T>(
     data_length: i32,
 ) -> HostFunctionResult<i32>
 where
-    T: AsRef<MockContext> + ContractCallProvider,
+    T: EvmContext + ContractCallProvider,
 {
     host_info!(
         "call_static called: gas={}, addr_offset={}, data_offset={}, data_length={}",
@@ -293,7 +294,7 @@ where
     })?;
 
     // Get the caller address from context
-    let caller_address = *context.as_ref().get_caller();
+    let caller_address = context.get_caller();
 
     host_info!("    📞 Static call: target=0x{}, caller=0x{}, data_len={}", 
                hex::encode(&target_address), hex::encode(&caller_address), call_data.len());
@@ -302,7 +303,7 @@ where
     let result = context.call_static(&target_address, &caller_address, &call_data, gas);
 
     // Store the return data in the context for later retrieval
-    context.as_ref().set_return_data(result.return_data.clone());
+    context.set_return_data(result.return_data.clone());
 
     let success_code = if result.success { 1 } else { 0 };
     host_info!("call_static completed: success={}, return_data_len={}, gas_used={}", 
@@ -338,7 +339,7 @@ pub fn create_contract<T>(
     result_offset: i32,
 ) -> HostFunctionResult<i32>
 where
-    T: AsRef<MockContext> + ContractCallProvider,
+    T: EvmContext + ContractCallProvider,
 {
     host_info!(
         "create_contract called: value_offset={}, code_offset={}, code_length={}, data_offset={}, data_length={}, result_offset={}",
@@ -376,7 +377,7 @@ where
     })?;
 
     // Get the creator address from context
-    let creator_address = *context.as_ref().get_address();
+    let creator_address = context.get_address();
 
     host_info!("    🏗️  Creating contract: creator=0x{}, value=0x{}, code_len={}, data_len={}", 
                hex::encode(&creator_address), hex::encode(&value), 
@@ -388,7 +389,7 @@ where
     let result = context.create_contract(&creator_address, &value, &creation_code, &constructor_data, gas);
 
     // Store the return data in the context for later retrieval
-    context.as_ref().set_return_data(result.return_data.clone());
+    context.set_return_data(result.return_data.clone());
 
     // Write the contract address to memory (or zero address if failed)
     let address_to_write = result.contract_address.unwrap_or([0u8; 20]);
@@ -408,7 +409,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::MockContext;
 
     // Note: These tests would require a proper ZenInstance setup
     // For now, they serve as documentation of expected behavior

@@ -4,7 +4,7 @@
 //! Execution control host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::MockContext;
+use crate::evm::traits::EvmContext;
 use crate::evm::memory::{MemoryAccessor, validate_data_param, validate_address_param};
 use crate::evm::error::HostFunctionResult;
 use crate::{host_info, host_error, host_warn};
@@ -24,7 +24,7 @@ pub fn finish<T>(
     length: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!("finish called: data_offset={}, length={}", data_offset, length);
 
@@ -42,7 +42,7 @@ where
     host_info!("finish: execution completed successfully with {} bytes of return data", return_data.len());
     
     // Store the return data in the MockContext so it can be accessed externally
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     context.set_return_data(return_data.clone());
     
     host_info!("finish: return data stored in context, hex: 0x{}", hex::encode(&return_data));
@@ -70,7 +70,7 @@ pub fn revert<T>(
     length: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!("revert called: data_offset={}, length={}", data_offset, length);
 
@@ -88,7 +88,7 @@ where
     host_warn!("revert: execution reverted with {} bytes of revert data", revert_data.len());
     
     // Store the revert data in the MockContext so it can be accessed externally
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     context.set_reverted(revert_data.clone());
     
     host_info!("revert: revert data stored in context, hex: 0x{}", hex::encode(&revert_data));
@@ -110,7 +110,7 @@ where
 /// Note: This function should cause the WASM execution to terminate with error
 pub fn invalid<T>(instance: &ZenInstance<T>) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!("invalid called");
 
@@ -137,7 +137,7 @@ pub fn self_destruct<T>(
     addr_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!("self_destruct called: addr_offset={}", addr_offset);
 
@@ -180,9 +180,9 @@ where
 /// - The size of the return data as i32
 pub fn get_return_data_size<T>(instance: &ZenInstance<T>) -> i32
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let return_data_size = context.get_return_data_size() as i32;
     
     host_info!("get_return_data_size called, returning: {} bytes", return_data_size);
@@ -207,7 +207,7 @@ pub fn return_data_copy<T>(
     length: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!(
         "return_data_copy called: result_offset={}, data_offset={}, length={}",
@@ -216,7 +216,7 @@ where
         length
     );
 
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate parameters
@@ -274,7 +274,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::MockContext;
 
     // Note: These tests would require a proper ZenInstance setup
     // For now, they serve as documentation of expected behavior

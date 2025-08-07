@@ -13,7 +13,9 @@
 //! or create sophisticated testing environments.
 
 use std::collections::HashMap;
-use dtvmcore_rust::evm::{MockContext, AccountBalanceProvider, BlockHashProvider, ExternalCodeProvider, ContractCallProvider, ContractCallResult, ContractCreateResult};
+mod mock_context;
+use mock_context::MockContext;
+use dtvmcore_rust::evm::{AccountBalanceProvider, BlockHashProvider, ExternalCodeProvider, ContractCallProvider, ContractCallResult, ContractCreateResult};
 
 /// A comprehensive test provider that implements all EVM provider traits
 /// 

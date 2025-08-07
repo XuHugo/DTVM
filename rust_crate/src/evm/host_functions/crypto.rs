@@ -44,7 +44,7 @@
 //! ```
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::MockContext;
+use crate::evm::traits::EvmContext;
 use crate::evm::memory::{MemoryAccessor, validate_bytes32_param, validate_data_param};
 use crate::evm::error::HostFunctionResult;
 use crate::evm::debug::format_hex;
@@ -70,7 +70,7 @@ pub fn sha256<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!(
         "sha256 called: input_offset={}, input_length={}, result_offset={}",
@@ -143,7 +143,7 @@ pub fn keccak256<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!(
         "keccak256 called: input_offset={}, input_length={}, result_offset={}",
@@ -233,7 +233,6 @@ fn validate_hash_params(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::MockContext;
 
     // Note: These tests would require a proper ZenInstance setup
     // For now, they serve as documentation of expected behavior

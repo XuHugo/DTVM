@@ -64,7 +64,7 @@
 //! ```
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::{MockContext, BlockHashProvider};
+use crate::evm::traits::{EvmContext, BlockHashProvider};
 use crate::evm::memory::{MemoryAccessor, validate_bytes32_param, validate_address_param};
 use crate::evm::error::HostFunctionResult;
 use crate::{host_info, host_error};
@@ -73,10 +73,10 @@ use crate::{host_info, host_error};
 /// Returns the block number as i64
 pub fn get_block_number<T>(instance: &ZenInstance<T>) -> i64
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
-    let context = instance.extra_ctx.as_ref();
-    let block_number = context.get_block_info().number;
+    let context = &instance.extra_ctx;
+    let block_number = context.get_block_number();
     
     host_info!("get_block_number called, returning: {}", block_number);
     block_number
@@ -86,10 +86,10 @@ where
 /// Returns the block timestamp as i64
 pub fn get_block_timestamp<T>(instance: &ZenInstance<T>) -> i64
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
-    let context = instance.extra_ctx.as_ref();
-    let timestamp = context.get_block_info().timestamp;
+    let context = &instance.extra_ctx;
+    let timestamp = context.get_block_timestamp();
     
     host_info!("get_block_timestamp called, returning: {}", timestamp);
     timestamp
@@ -99,10 +99,10 @@ where
 /// Returns the block gas limit as i64
 pub fn get_block_gas_limit<T>(instance: &ZenInstance<T>) -> i64
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
-    let context = instance.extra_ctx.as_ref();
-    let gas_limit = context.get_block_info().gas_limit;
+    let context = &instance.extra_ctx;
+    let gas_limit = context.get_block_gas_limit();
     
     host_info!("get_block_gas_limit called, returning: {}", gas_limit);
     gas_limit
@@ -119,18 +119,18 @@ pub fn get_block_coinbase<T>(
     result_offset: i32
 ) -> HostFunctionResult<()>
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
     host_info!("get_block_coinbase called: result_offset={}", result_offset);
     
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate the result offset
     let offset = validate_address_param(instance, result_offset)?;
     
     // Get the coinbase address from block info
-    let coinbase = context.get_block_info().get_coinbase();
+    let coinbase = context.get_block_coinbase();
     
     // Write the address to memory
     memory.write_address(offset, coinbase)
@@ -154,18 +154,18 @@ pub fn get_block_prev_randao<T>(
     result_offset: i32
 ) -> HostFunctionResult<()>
 where 
-    T: AsRef<MockContext>
+    T: EvmContext
 {
     host_info!("get_block_prev_randao called: result_offset={}", result_offset);
     
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate the result offset
     let offset = validate_bytes32_param(instance, result_offset)?;
     
     // Get the previous randao from block info
-    let prev_randao = context.get_block_info().get_prev_randao();
+    let prev_randao = context.get_block_prev_randao();
     
     // Write the value to memory
     memory.write_bytes32(offset, prev_randao)
@@ -198,7 +198,7 @@ pub fn get_block_hash<T>(
     result_offset: i32
 ) -> HostFunctionResult<i32>
 where 
-    T: AsRef<MockContext> + BlockHashProvider
+    T: EvmContext + BlockHashProvider
 {
     host_info!("get_block_hash called: block_num={}, result_offset={}", block_num, result_offset);
     
@@ -208,7 +208,7 @@ where
     // Validate the result offset
     let offset = validate_bytes32_param(instance, result_offset)?;
     
-    let current_block = context.as_ref().get_block_info().number;
+    let current_block = context.get_block_number();
     
     // Basic validation: block number should be non-negative and less than current block
     if block_num < 0 || block_num >= current_block {
@@ -262,7 +262,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::MockContext;
     
     // Note: These tests would require a proper ZenInstance setup
     // For now, they serve as documentation of expected behavior

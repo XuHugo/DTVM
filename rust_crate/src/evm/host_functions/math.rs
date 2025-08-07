@@ -4,7 +4,7 @@
 //! Mathematical operation host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::MockContext;
+use crate::evm::traits::EvmContext;
 use crate::evm::memory::{MemoryAccessor, validate_bytes32_param};
 use crate::evm::error::HostFunctionResult;
 use crate::evm::debug::format_hex;
@@ -29,7 +29,7 @@ pub fn addmod<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!(
         "addmod called: a_offset={}, b_offset={}, n_offset={}, result_offset={}",
@@ -110,7 +110,7 @@ pub fn mulmod<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!(
         "mulmod called: a_offset={}, b_offset={}, n_offset={}, result_offset={}",
@@ -191,7 +191,7 @@ pub fn expmod<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: EvmContext,
 {
     host_info!(
         "expmod called: base_offset={}, exp_offset={}, mod_offset={}, result_offset={}",
@@ -316,7 +316,6 @@ fn validate_modular_params(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evm::MockContext;
 
     // Note: These tests would require a proper ZenInstance setup
     // For now, they serve as documentation of expected behavior
