@@ -23,3 +23,7 @@ path = "src/main.rs"
 name = "main_counter"
 path = "src/main_counter.rs"
 
+[[bin]]
+name = "main_simple_token"
+path = "src/main_simple_token.rs"
+
