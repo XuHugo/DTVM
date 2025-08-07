@@ -849,6 +849,457 @@ impl MockContext {
     }
 }
 
+// ============================================================================
+// Account Balance Provider Trait - For external balance queries
+// ============================================================================
+
+/// Trait for providing account balance information
+/// 
+/// This trait allows users to implement custom balance lookup logic
+/// without storing all balance data in the MockContext. This is important
+/// because balance data can be very large and should be queried on-demand.
+/// 
+/// # Usage
+/// 
+/// ```rust
+/// use dtvmcore_rust::evm::{MockContext, AccountBalanceProvider};
+/// 
+/// struct MyBalanceProvider {
+///     // Your balance storage/database connection here
+/// }
+/// 
+/// impl AccountBalanceProvider for MyBalanceProvider {
+///     fn get_account_balance(&self, address: &[u8; 20]) -> [u8; 32] {
+///         // Query your database/storage for the balance
+///         // Return 32-byte balance in big-endian format
+///         [0u8; 32] // Default to zero if not found
+///     }
+/// }
+/// ```
+pub trait AccountBalanceProvider {
+    /// Get the balance for an account address
+    /// 
+    /// This method should query the balance for the given address
+    /// and return it as a 32-byte array in big-endian format.
+    /// If the account doesn't exist or has no balance, return zero.
+    /// 
+    /// Parameters:
+    /// - address: The 20-byte account address to query
+    /// 
+    /// Returns:
+    /// - The 32-byte balance value in big-endian format
+    fn get_account_balance(&self, address: &[u8; 20]) -> [u8; 32];
+}
+
+/// Default implementation that returns zero balance for all accounts
+/// This is used when no custom balance provider is specified
+impl AccountBalanceProvider for MockContext {
+    fn get_account_balance(&self, address: &[u8; 20]) -> [u8; 32] {
+        // Default implementation returns zero balance
+        // Users can override this by implementing their own balance provider
+        let address_hex = format!("0x{}", hex::encode(address));
+        host_debug!("Default balance provider: returning zero balance for address {}", address_hex);
+        [0u8; 32]
+    }
+}
+
+/// Trait for providing block hash information
+/// 
+/// This trait allows users to implement custom block hash lookup logic
+/// without storing all block data in the MockContext. This is important
+/// because block data can be very large and should be queried on-demand.
+/// 
+/// # Usage
+/// 
+/// ```rust
+/// use dtvmcore_rust::evm::{MockContext, BlockHashProvider};
+/// 
+/// struct MyBlockHashProvider {
+///     // Your block storage/database connection here
+/// }
+/// 
+/// impl BlockHashProvider for MyBlockHashProvider {
+///     fn get_block_hash(&self, block_number: i64) -> Option<[u8; 32]> {
+///         // Query your database/storage for the block hash
+///         // Return Some(hash) if found, None if not found or too old
+///         None // Default to not found
+///     }
+/// }
+/// ```
+pub trait BlockHashProvider {
+    /// Get the hash for a specific block number
+    /// 
+    /// This method should query the block hash for the given block number.
+    /// In real EVM implementations, only the last 256 blocks are accessible.
+    /// 
+    /// Parameters:
+    /// - block_number: The block number to query (0-based)
+    /// 
+    /// Returns:
+    /// - Some(hash) if the block exists and is accessible
+    /// - None if the block doesn't exist, is too old, or is invalid
+    fn get_block_hash(&self, block_number: i64) -> Option<[u8; 32]>;
+}
+
+/// Default implementation that returns None for all block hashes
+/// This is used when no custom block hash provider is specified
+impl BlockHashProvider for MockContext {
+    fn get_block_hash(&self, block_number: i64) -> Option<[u8; 32]> {
+        // Default implementation returns None (block not found)
+        // Users can override this by implementing their own block hash provider
+        host_debug!("Default block hash provider: returning None for block {}", block_number);
+        None
+    }
+}
+
+/// Trait for providing external contract code information
+/// 
+/// This trait allows users to implement custom external contract code lookup logic
+/// without storing all contract data in the MockContext. This is important
+/// because contract code data can be very large and should be queried on-demand.
+/// 
+/// # Usage
+/// 
+/// ```rust
+/// use dtvmcore_rust::evm::{MockContext, ExternalCodeProvider};
+/// 
+/// struct MyCodeProvider {
+///     // Your contract storage/database connection here
+/// }
+/// 
+/// impl ExternalCodeProvider for MyCodeProvider {
+///     fn get_external_code_size(&self, address: &[u8; 20]) -> Option<i32> {
+///         // Query your database/storage for the contract code size
+///         // Return Some(size) if contract exists, None if not found
+///         None // Default to not found
+///     }
+///     
+///     fn get_external_code_hash(&self, address: &[u8; 20]) -> Option<[u8; 32]> {
+///         // Query your database/storage for the contract code hash
+///         // Return Some(hash) if contract exists, None if not found
+///         None // Default to not found
+///     }
+///     
+///     fn get_external_code(&self, address: &[u8; 20]) -> Option<Vec<u8>> {
+///         // Query your database/storage for the contract code
+///         // Return Some(code) if contract exists, None if not found
+///         None // Default to not found
+///     }
+/// }
+/// ```
+pub trait ExternalCodeProvider {
+    /// Get the size of an external contract's code
+    /// 
+    /// This method should query the code size for the given contract address.
+    /// 
+    /// Parameters:
+    /// - address: The 20-byte contract address to query
+    /// 
+    /// Returns:
+    /// - Some(size) if the contract exists and has code
+    /// - None if the contract doesn't exist or has no code
+    fn get_external_code_size(&self, address: &[u8; 20]) -> Option<i32>;
+    
+    /// Get the hash of an external contract's code
+    /// 
+    /// This method should query the code hash for the given contract address.
+    /// The code hash is typically the keccak256 hash of the contract's bytecode.
+    /// 
+    /// Parameters:
+    /// - address: The 20-byte contract address to query
+    /// 
+    /// Returns:
+    /// - Some(hash) if the contract exists and has code
+    /// - None if the contract doesn't exist or has no code
+    fn get_external_code_hash(&self, address: &[u8; 20]) -> Option<[u8; 32]>;
+    
+    /// Get the bytecode of an external contract
+    /// 
+    /// This method should query the full bytecode for the given contract address.
+    /// This is used by the external_code_copy function to copy portions of the code.
+    /// 
+    /// Parameters:
+    /// - address: The 20-byte contract address to query
+    /// 
+    /// Returns:
+    /// - Some(code) if the contract exists and has code
+    /// - None if the contract doesn't exist or has no code
+    fn get_external_code(&self, address: &[u8; 20]) -> Option<Vec<u8>>;
+}
+
+/// Default implementation that returns None for all external code queries
+/// This is used when no custom external code provider is specified
+impl ExternalCodeProvider for MockContext {
+    fn get_external_code_size(&self, address: &[u8; 20]) -> Option<i32> {
+        // Default implementation returns None (contract not found)
+        // Users can override this by implementing their own external code provider
+        let address_hex = format!("0x{}", hex::encode(address));
+        host_debug!("Default external code provider: returning None for code size of {}", address_hex);
+        None
+    }
+    
+    fn get_external_code_hash(&self, address: &[u8; 20]) -> Option<[u8; 32]> {
+        // Default implementation returns None (contract not found)
+        // Users can override this by implementing their own external code provider
+        let address_hex = format!("0x{}", hex::encode(address));
+        host_debug!("Default external code provider: returning None for code hash of {}", address_hex);
+        None
+    }
+    
+    fn get_external_code(&self, address: &[u8; 20]) -> Option<Vec<u8>> {
+        // Default implementation returns None (contract not found)
+        // Users can override this by implementing their own external code provider
+        let address_hex = format!("0x{}", hex::encode(address));
+        host_debug!("Default external code provider: returning None for code of {}", address_hex);
+        None
+    }
+}
+
+/// Result of a contract call operation
+#[derive(Clone, Debug, PartialEq)]
+pub struct ContractCallResult {
+    /// Whether the call succeeded (true) or failed (false)
+    pub success: bool,
+    /// Return data from the call
+    pub return_data: Vec<u8>,
+    /// Gas used by the call
+    pub gas_used: i64,
+}
+
+impl ContractCallResult {
+    /// Create a successful call result
+    pub fn success(return_data: Vec<u8>, gas_used: i64) -> Self {
+        Self {
+            success: true,
+            return_data,
+            gas_used,
+        }
+    }
+    
+    /// Create a failed call result
+    pub fn failure(return_data: Vec<u8>, gas_used: i64) -> Self {
+        Self {
+            success: false,
+            return_data,
+            gas_used,
+        }
+    }
+    
+    /// Create a simple success result with no return data
+    pub fn simple_success() -> Self {
+        Self::success(vec![], 0)
+    }
+    
+    /// Create a simple failure result with no return data
+    pub fn simple_failure() -> Self {
+        Self::failure(vec![], 0)
+    }
+}
+
+/// Result of a contract creation operation
+#[derive(Clone, Debug, PartialEq)]
+pub struct ContractCreateResult {
+    /// Whether the creation succeeded (true) or failed (false)
+    pub success: bool,
+    /// Address of the created contract (if successful)
+    pub contract_address: Option<[u8; 20]>,
+    /// Return data from the constructor
+    pub return_data: Vec<u8>,
+    /// Gas used by the creation
+    pub gas_used: i64,
+}
+
+impl ContractCreateResult {
+    /// Create a successful creation result
+    pub fn success(contract_address: [u8; 20], return_data: Vec<u8>, gas_used: i64) -> Self {
+        Self {
+            success: true,
+            contract_address: Some(contract_address),
+            return_data,
+            gas_used,
+        }
+    }
+    
+    /// Create a failed creation result
+    pub fn failure(return_data: Vec<u8>, gas_used: i64) -> Self {
+        Self {
+            success: false,
+            contract_address: None,
+            return_data,
+            gas_used,
+        }
+    }
+    
+    /// Create a simple failure result
+    pub fn simple_failure() -> Self {
+        Self::failure(vec![], 0)
+    }
+}
+
+/// Trait for providing contract call and creation functionality
+/// 
+/// This trait allows users to implement custom contract interaction logic
+/// without hardcoding behavior in the host functions. This is important
+/// for supporting different execution environments (testing, simulation, real blockchain).
+/// 
+/// # Usage
+/// 
+/// ```rust
+/// use dtvmcore_rust::evm::{MockContext, ContractCallProvider, ContractCallResult, ContractCreateResult};
+/// 
+/// struct MyContractProvider {
+///     // Your contract execution engine here
+/// }
+/// 
+/// impl ContractCallProvider for MyContractProvider {
+///     fn call_contract(&self, target: &[u8; 20], caller: &[u8; 20], value: &[u8; 32], 
+///                      data: &[u8], gas: i64) -> ContractCallResult {
+///         // Implement your contract call logic
+///         ContractCallResult::simple_failure() // Default to failure
+///     }
+///     
+///     // ... implement other methods
+/// }
+/// ```
+pub trait ContractCallProvider {
+    /// Execute a regular contract call (CALL opcode)
+    /// 
+    /// Parameters:
+    /// - target: The 20-byte address of the contract to call
+    /// - caller: The 20-byte address of the calling contract
+    /// - value: The 32-byte value (in wei) to send with the call
+    /// - data: The call data (function selector + parameters)
+    /// - gas: Gas limit for the call
+    /// 
+    /// Returns:
+    /// - ContractCallResult with success status, return data, and gas usage
+    fn call_contract(
+        &self,
+        target: &[u8; 20],
+        caller: &[u8; 20],
+        value: &[u8; 32],
+        data: &[u8],
+        gas: i64,
+    ) -> ContractCallResult;
+    
+    /// Execute a call code operation (CALLCODE opcode)
+    /// Similar to call_contract but uses the caller's storage context
+    fn call_code(
+        &self,
+        target: &[u8; 20],
+        caller: &[u8; 20],
+        value: &[u8; 32],
+        data: &[u8],
+        gas: i64,
+    ) -> ContractCallResult;
+    
+    /// Execute a delegate call (DELEGATECALL opcode)
+    /// Calls target contract but preserves caller's context (address, value, etc.)
+    fn call_delegate(
+        &self,
+        target: &[u8; 20],
+        caller: &[u8; 20],
+        data: &[u8],
+        gas: i64,
+    ) -> ContractCallResult;
+    
+    /// Execute a static call (STATICCALL opcode)
+    /// Calls target contract without allowing state modifications
+    fn call_static(
+        &self,
+        target: &[u8; 20],
+        caller: &[u8; 20],
+        data: &[u8],
+        gas: i64,
+    ) -> ContractCallResult;
+    
+    /// Create a new contract (CREATE opcode)
+    /// 
+    /// Parameters:
+    /// - creator: The 20-byte address of the contract creator
+    /// - value: The 32-byte value (in wei) to send to the constructor
+    /// - code: The contract creation code (constructor + runtime code)
+    /// - data: Constructor parameters
+    /// - gas: Gas limit for the creation
+    /// 
+    /// Returns:
+    /// - ContractCreateResult with success status, contract address, and return data
+    fn create_contract(
+        &self,
+        creator: &[u8; 20],
+        value: &[u8; 32],
+        code: &[u8],
+        data: &[u8],
+        gas: i64,
+    ) -> ContractCreateResult;
+}
+
+/// Default implementation that returns failure for all contract operations
+/// This is used when no custom contract call provider is specified
+impl ContractCallProvider for MockContext {
+    fn call_contract(
+        &self,
+        target: &[u8; 20],
+        _caller: &[u8; 20],
+        _value: &[u8; 32],
+        _data: &[u8],
+        _gas: i64,
+    ) -> ContractCallResult {
+        let target_hex = format!("0x{}", hex::encode(target));
+        host_debug!("Default contract call provider: call_contract to {} returning failure", target_hex);
+        ContractCallResult::simple_failure()
+    }
+    
+    fn call_code(
+        &self,
+        target: &[u8; 20],
+        _caller: &[u8; 20],
+        _value: &[u8; 32],
+        _data: &[u8],
+        _gas: i64,
+    ) -> ContractCallResult {
+        let target_hex = format!("0x{}", hex::encode(target));
+        host_debug!("Default contract call provider: call_code to {} returning failure", target_hex);
+        ContractCallResult::simple_failure()
+    }
+    
+    fn call_delegate(
+        &self,
+        target: &[u8; 20],
+        _caller: &[u8; 20],
+        _data: &[u8],
+        _gas: i64,
+    ) -> ContractCallResult {
+        let target_hex = format!("0x{}", hex::encode(target));
+        host_debug!("Default contract call provider: call_delegate to {} returning failure", target_hex);
+        ContractCallResult::simple_failure()
+    }
+    
+    fn call_static(
+        &self,
+        target: &[u8; 20],
+        _caller: &[u8; 20],
+        _data: &[u8],
+        _gas: i64,
+    ) -> ContractCallResult {
+        let target_hex = format!("0x{}", hex::encode(target));
+        host_debug!("Default contract call provider: call_static to {} returning failure", target_hex);
+        ContractCallResult::simple_failure()
+    }
+    
+    fn create_contract(
+        &self,
+        _creator: &[u8; 20],
+        _value: &[u8; 32],
+        _code: &[u8],
+        _data: &[u8],
+        _gas: i64,
+    ) -> ContractCreateResult {
+        host_debug!("Default contract call provider: create_contract returning failure");
+        ContractCreateResult::simple_failure()
+    }
+}
+
 // Implement AsRef<MockContext> for MockContext to support the host functions API
 impl AsRef<MockContext> for MockContext {
     fn as_ref(&self) -> &MockContext {

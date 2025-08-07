@@ -4,7 +4,7 @@
 //! Code related host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::MockContext;
+use crate::evm::context::{MockContext, ExternalCodeProvider};
 use crate::evm::memory::{MemoryAccessor, validate_address_param, validate_bytes32_param, validate_data_param};
 use crate::evm::error::HostFunctionResult;
 use crate::{host_info, host_error};
@@ -90,44 +90,56 @@ where
 /// Get the size of an external contract's code
 /// Returns the size of the specified external contract's code
 /// 
+/// This function queries the external code size using the ExternalCodeProvider trait,
+/// allowing users to implement custom external contract code lookup logic.
+/// 
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - addr_offset: Memory offset of the 20-byte contract address
 /// 
 /// Returns:
-/// - The size of the external contract's code as i32
+/// - The size of the external contract's code as i32, or 0 if not found
 pub fn get_external_code_size<T>(
     instance: &ZenInstance<T>,
     addr_offset: i32,
 ) -> HostFunctionResult<i32>
 where
-    T: AsRef<MockContext>,
+    T: AsRef<MockContext> + ExternalCodeProvider,
 {
     host_info!("get_external_code_size called: addr_offset={}", addr_offset);
 
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate the address parameter
     let addr_offset_u32 = validate_address_param(instance, addr_offset)?;
 
     // Read the address
-    let _address = memory.read_address(addr_offset_u32).map_err(|e| {
+    let address = memory.read_address(addr_offset_u32).map_err(|e| {
         host_error!("Failed to read address at offset {}: {}", addr_offset, e);
         e
     })?;
 
-    // In a mock environment, return a fixed external code size
-    let mock_external_code_size = 42; // Mock external contract code size
+    host_info!("    🔍 Querying external code size for address: 0x{}", hex::encode(&address));
 
-    host_info!(
-        "get_external_code_size completed: returning mock size {}",
-        mock_external_code_size
-    );
-    Ok(mock_external_code_size)
+    // Query the external code size using the ExternalCodeProvider trait
+    match context.get_external_code_size(&address) {
+        Some(size) => {
+            host_info!("    📏 Retrieved external code size: {}", size);
+            Ok(size)
+        }
+        None => {
+            host_info!("    ❌ External contract not found, returning size 0");
+            Ok(0) // Return 0 for non-existent contracts
+        }
+    }
 }
 
 /// Get the hash of an external contract's code
 /// Writes the 32-byte code hash of the specified external contract to memory
+/// 
+/// This function queries the external code hash using the ExternalCodeProvider trait,
+/// allowing users to implement custom external contract code lookup logic.
 /// 
 /// Parameters:
 /// - instance: WASM instance pointer
@@ -139,7 +151,7 @@ pub fn get_external_code_hash<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: AsRef<MockContext> + ExternalCodeProvider,
 {
     host_info!(
         "get_external_code_hash called: addr_offset={}, result_offset={}",
@@ -147,6 +159,7 @@ where
         result_offset
     );
 
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate parameters
@@ -154,31 +167,48 @@ where
     let result_offset_u32 = validate_bytes32_param(instance, result_offset)?;
 
     // Read the address
-    let _address = memory.read_address(addr_offset_u32).map_err(|e| {
+    let address = memory.read_address(addr_offset_u32).map_err(|e| {
         host_error!("Failed to read address at offset {}: {}", addr_offset, e);
         e
     })?;
 
-    // Generate mock external code hash
-    let mut mock_code_hash = [0u8; 32];
-    mock_code_hash[0] = 0xEC; // Mock external code hash prefix (matches C++ implementation)
-    mock_code_hash[31] = 0x01; // Simple distinguishing pattern
+    host_info!("    🔍 Querying external code hash for address: 0x{}", hex::encode(&address));
 
-    // Write the hash to memory
-    memory.write_bytes32(result_offset_u32, &mock_code_hash).map_err(|e| {
-        host_error!("Failed to write code hash at offset {}: {}", result_offset, e);
-        e
-    })?;
-
-    host_info!(
-        "get_external_code_hash completed: hash written to offset {}",
-        result_offset
-    );
-    Ok(())
+    // Query the external code hash using the ExternalCodeProvider trait
+    match context.get_external_code_hash(&address) {
+        Some(hash) => {
+            host_info!("    🔐 Retrieved external code hash: 0x{}", hex::encode(&hash));
+            
+            // Write the hash to memory
+            memory.write_bytes32(result_offset_u32, &hash).map_err(|e| {
+                host_error!("Failed to write code hash at offset {}: {}", result_offset, e);
+                e
+            })?;
+            
+            host_info!("get_external_code_hash completed: hash written to offset {}", result_offset);
+            Ok(())
+        }
+        None => {
+            host_info!("    ❌ External contract not found, writing zero hash");
+            
+            // Write zero hash for non-existent contracts
+            let zero_hash = [0u8; 32];
+            memory.write_bytes32(result_offset_u32, &zero_hash).map_err(|e| {
+                host_error!("Failed to write zero hash at offset {}: {}", result_offset, e);
+                e
+            })?;
+            
+            host_info!("get_external_code_hash completed: zero hash written for non-existent contract");
+            Ok(())
+        }
+    }
 }
 
 /// Copy external contract code to memory
 /// Copies a portion of an external contract's code to the specified memory location
+/// 
+/// This function queries the external code using the ExternalCodeProvider trait,
+/// allowing users to implement custom external contract code lookup logic.
 /// 
 /// Parameters:
 /// - instance: WASM instance pointer
@@ -194,7 +224,7 @@ pub fn external_code_copy<T>(
     length: i32,
 ) -> HostFunctionResult<()>
 where
-    T: AsRef<MockContext>,
+    T: AsRef<MockContext> + ExternalCodeProvider,
 {
     host_info!(
         "external_code_copy called: addr_offset={}, result_offset={}, code_offset={}, length={}",
@@ -204,6 +234,7 @@ where
         length
     );
 
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate parameters
@@ -219,43 +250,69 @@ where
     }
 
     // Read the address
-    let _address = memory.read_address(addr_offset_u32).map_err(|e| {
+    let address = memory.read_address(addr_offset_u32).map_err(|e| {
         host_error!("Failed to read address at offset {}: {}", addr_offset, e);
         e
     })?;
 
-    // In a mock environment, generate some mock external code
-    let mock_external_code = vec![0x60, 0x80, 0x60, 0x40]; // Mock external contract bytecode
-    let mut buffer = vec![0u8; length_u32 as usize];
-    
-    // Copy from mock external code with bounds checking
-    let code_offset_usize = code_offset as usize;
-    let available_bytes = if code_offset_usize < mock_external_code.len() {
-        mock_external_code.len() - code_offset_usize
-    } else {
-        0
-    };
-    
-    let copy_len = std::cmp::min(available_bytes, length_u32 as usize);
-    if copy_len > 0 {
-        buffer[..copy_len].copy_from_slice(
-            &mock_external_code[code_offset_usize..code_offset_usize + copy_len]
-        );
+    host_info!("    🔍 Querying external code for address: 0x{}", hex::encode(&address));
+
+    // Query the external code using the ExternalCodeProvider trait
+    match context.get_external_code(&address) {
+        Some(external_code) => {
+            host_info!("    📄 Retrieved external code: {} bytes", external_code.len());
+            
+            let mut buffer = vec![0u8; length_u32 as usize];
+            
+            // Copy from external code with bounds checking
+            let code_offset_usize = code_offset as usize;
+            let available_bytes = if code_offset_usize < external_code.len() {
+                external_code.len() - code_offset_usize
+            } else {
+                0
+            };
+            
+            let copy_len = std::cmp::min(available_bytes, length_u32 as usize);
+            if copy_len > 0 {
+                buffer[..copy_len].copy_from_slice(
+                    &external_code[code_offset_usize..code_offset_usize + copy_len]
+                );
+                host_info!("    📋 Copied {} bytes from external code", copy_len);
+            } else {
+                host_info!("    📋 No bytes copied (offset beyond code length)");
+            }
+
+            // Write the copied data to memory
+            memory.write_bytes(result_offset_u32, &buffer).map_err(|e| {
+                host_error!("Failed to write external code to memory at offset {}: {}", result_offset, e);
+                e
+            })?;
+
+            host_info!(
+                "external_code_copy completed: copied {} bytes from external code offset {} to memory offset {}",
+                copy_len,
+                code_offset,
+                result_offset
+            );
+            Ok(())
+        }
+        None => {
+            host_info!("    ❌ External contract not found, writing zeros");
+            
+            // Write zeros for non-existent contracts
+            let buffer = vec![0u8; length_u32 as usize];
+            memory.write_bytes(result_offset_u32, &buffer).map_err(|e| {
+                host_error!("Failed to write zeros to memory at offset {}: {}", result_offset, e);
+                e
+            })?;
+
+            host_info!(
+                "external_code_copy completed: wrote {} zero bytes for non-existent contract",
+                length_u32
+            );
+            Ok(())
+        }
     }
-
-    // Write the copied data to memory
-    memory.write_bytes(result_offset_u32, &buffer).map_err(|e| {
-        host_error!("Failed to write external code to memory at offset {}: {}", result_offset, e);
-        e
-    })?;
-
-    host_info!(
-        "external_code_copy completed: copied {} bytes from external code offset {} to memory offset {}",
-        copy_len,
-        code_offset,
-        result_offset
-    );
-    Ok(())
 }
 
 #[cfg(test)]

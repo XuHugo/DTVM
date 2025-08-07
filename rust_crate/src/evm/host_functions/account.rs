@@ -4,7 +4,7 @@
 //! Account and address related host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::MockContext;
+use crate::evm::context::{MockContext, AccountBalanceProvider};
 use crate::evm::memory::{MemoryAccessor, validate_address_param, validate_bytes32_param};
 use crate::evm::error::HostFunctionResult;
 use crate::{host_info, host_error};
@@ -187,6 +187,9 @@ where
 /// Get the balance of an external account
 /// Writes the 32-byte balance to the specified memory location
 /// 
+/// This function queries the balance using the AccountBalanceProvider trait,
+/// allowing users to implement custom balance lookup logic.
+/// 
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - addr_offset: Memory offset of the 20-byte address to query
@@ -197,10 +200,11 @@ pub fn get_external_balance<T>(
     result_offset: i32
 ) -> HostFunctionResult<()>
 where 
-    T: AsRef<MockContext>
+    T: AsRef<MockContext> + crate::evm::context::AccountBalanceProvider
 {
     host_info!("get_external_balance called: addr_offset={}, result_offset={}", addr_offset, result_offset);
     
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate both offsets
@@ -208,18 +212,21 @@ where
     let result_offset_u32 = validate_bytes32_param(instance, result_offset)?;
     
     // Read the address to query
-    let _address = memory.read_address(addr_offset_u32)
+    let address = memory.read_address(addr_offset_u32)
         .map_err(|e| {
             host_error!("Failed to read address at offset {}: {}", addr_offset, e);
             e
         })?;
     
-    // In a mock environment, return a fixed balance
-    let mut mock_balance = [0u8; 32];
-    mock_balance[31] = 100; // Mock balance of 100 wei
+    host_info!("    🔍 Querying balance for address: 0x{}", hex::encode(&address));
+    
+    // Query the balance using the AccountBalanceProvider trait
+    let balance = context.get_account_balance(&address);
+    
+    host_info!("    💰 Retrieved balance: 0x{}", hex::encode(&balance));
     
     // Write the balance to memory
-    memory.write_bytes32(result_offset_u32, &mock_balance)
+    memory.write_bytes32(result_offset_u32, &balance)
         .map_err(|e| {
             host_error!("Failed to write balance at offset {}: {}", result_offset, e);
             e

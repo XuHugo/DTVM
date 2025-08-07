@@ -64,7 +64,7 @@
 //! ```
 
 use crate::core::instance::ZenInstance;
-use crate::evm::context::MockContext;
+use crate::evm::context::{MockContext, BlockHashProvider};
 use crate::evm::memory::{MemoryAccessor, validate_bytes32_param, validate_address_param};
 use crate::evm::error::HostFunctionResult;
 use crate::{host_info, host_error};
@@ -181,6 +181,9 @@ where
 /// Get a block hash for a specific block number
 /// Writes the 32-byte block hash to the specified memory location
 /// 
+/// This function queries the block hash using the BlockHashProvider trait,
+/// allowing users to implement custom block hash lookup logic.
+/// 
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - block_num: The block number to get the hash for
@@ -195,20 +198,19 @@ pub fn get_block_hash<T>(
     result_offset: i32
 ) -> HostFunctionResult<i32>
 where 
-    T: AsRef<MockContext>
+    T: AsRef<MockContext> + BlockHashProvider
 {
     host_info!("get_block_hash called: block_num={}, result_offset={}", block_num, result_offset);
     
-    let context = instance.extra_ctx.as_ref();
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate the result offset
     let offset = validate_bytes32_param(instance, result_offset)?;
     
-    let current_block = context.get_block_info().number;
+    let current_block = context.as_ref().get_block_info().number;
     
-    // Check if the requested block number is valid
-    // In a real implementation, we'd check if the block is within the last 256 blocks
+    // Basic validation: block number should be non-negative and less than current block
     if block_num < 0 || block_num >= current_block {
         host_info!("get_block_hash: invalid block number {} (current: {})", block_num, current_block);
         
@@ -223,21 +225,38 @@ where
         return Ok(0); // Block not found
     }
     
-    // Generate a mock hash based on the block number
-    let mut mock_hash = [0u8; 32];
-    mock_hash[0] = 0x06; // Mock block hash prefix
-    let block_bytes = (block_num as u64).to_be_bytes();
-    mock_hash[1..9].copy_from_slice(&block_bytes);
+    host_info!("    🔍 Querying block hash for block number: {}", block_num);
     
-    // Write the hash to memory
-    memory.write_bytes32(offset, &mock_hash)
-        .map_err(|e| {
-            host_error!("Failed to write block hash at offset {}: {}", result_offset, e);
-            e
-        })?;
-    
-    host_info!("get_block_hash completed: hash for block {} written to offset {}", block_num, result_offset);
-    Ok(1) // Success
+    // Query the block hash using the BlockHashProvider trait
+    match context.get_block_hash(block_num) {
+        Some(hash) => {
+            host_info!("    📦 Retrieved block hash: 0x{}", hex::encode(&hash));
+            
+            // Write the hash to memory
+            memory.write_bytes32(offset, &hash)
+                .map_err(|e| {
+                    host_error!("Failed to write block hash at offset {}: {}", result_offset, e);
+                    e
+                })?;
+            
+            host_info!("get_block_hash completed: hash for block {} written to offset {}", block_num, result_offset);
+            Ok(1) // Success
+        }
+        None => {
+            host_info!("    ❌ Block hash not found for block {}", block_num);
+            
+            // Write zero hash when block is not found or too old
+            let zero_hash = [0u8; 32];
+            memory.write_bytes32(offset, &zero_hash)
+                .map_err(|e| {
+                    host_error!("Failed to write zero hash at offset {}: {}", result_offset, e);
+                    e
+                })?;
+            
+            host_info!("get_block_hash completed: zero hash written for unavailable block {}", block_num);
+            Ok(0) // Block not found
+        }
+    }
 }
 
 #[cfg(test)]

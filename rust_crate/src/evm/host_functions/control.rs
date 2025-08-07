@@ -170,6 +170,9 @@ where
 /// Get the size of the return data from the last call
 /// Returns the size of the return data buffer
 /// 
+/// This function returns the size of the return data that was set by the last
+/// contract call or the current contract's execution (via finish/revert).
+/// 
 /// Parameters:
 /// - instance: WASM instance pointer
 /// 
@@ -179,16 +182,18 @@ pub fn get_return_data_size<T>(instance: &ZenInstance<T>) -> i32
 where
     T: AsRef<MockContext>,
 {
-    // In a mock environment, we don't have actual return data from calls
-    // Return 0 to indicate no return data available
-    let return_data_size = 0;
+    let context = instance.extra_ctx.as_ref();
+    let return_data_size = context.get_return_data_size() as i32;
     
-    host_info!("get_return_data_size called, returning: {}", return_data_size);
+    host_info!("get_return_data_size called, returning: {} bytes", return_data_size);
     return_data_size
 }
 
 /// Copy return data from the last call to memory
 /// Copies the return data from the last external call to the specified memory location
+/// 
+/// This function copies return data that was set by the last contract call or
+/// the current contract's execution (via finish/revert) to the specified memory location.
 /// 
 /// Parameters:
 /// - instance: WASM instance pointer
@@ -211,6 +216,7 @@ where
         length
     );
 
+    let context = instance.extra_ctx.as_ref();
     let memory = MemoryAccessor::new(instance);
 
     // Validate parameters
@@ -224,18 +230,42 @@ where
         ));
     }
 
-    // In a mock environment, we don't have actual return data
-    // Fill the requested memory with zeros
-    let zero_data = vec![0u8; length_u32 as usize];
+    // Get the return data from the context
+    let return_data = context.get_return_data();
+    let data_offset_usize = data_offset as usize;
     
-    memory.write_bytes(result_offset_u32, &zero_data).map_err(|e| {
+    host_info!("    📤 Available return data: {} bytes", return_data.len());
+    
+    // Prepare buffer for copying
+    let mut buffer = vec![0u8; length_u32 as usize];
+    
+    // Copy from return data with bounds checking
+    let available_bytes = if data_offset_usize < return_data.len() {
+        return_data.len() - data_offset_usize
+    } else {
+        0
+    };
+    
+    let copy_len = std::cmp::min(available_bytes, length_u32 as usize);
+    if copy_len > 0 {
+        buffer[..copy_len].copy_from_slice(
+            &return_data[data_offset_usize..data_offset_usize + copy_len]
+        );
+        host_info!("    📋 Copied {} bytes from return data", copy_len);
+    } else {
+        host_info!("    📋 No bytes copied (offset beyond return data length or no return data)");
+    }
+    
+    // Write the buffer to memory
+    memory.write_bytes(result_offset_u32, &buffer).map_err(|e| {
         host_error!("Failed to write return data to memory at offset {}: {}", result_offset, e);
         e
     })?;
 
     host_info!(
-        "return_data_copy completed: copied {} zero bytes to memory offset {} (no return data in mock environment)",
-        length,
+        "return_data_copy completed: copied {} bytes from return data offset {} to memory offset {}",
+        copy_len,
+        data_offset,
         result_offset
     );
     Ok(())

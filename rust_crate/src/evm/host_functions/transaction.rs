@@ -34,6 +34,9 @@ where
 /// Copy call data to memory
 /// Copies a portion of the call data to the specified memory location
 /// 
+/// This function follows EVM semantics: if the requested data extends beyond
+/// the available call data, the remaining bytes are filled with zeros.
+/// 
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - result_offset: Memory offset where the call data should be copied
@@ -69,23 +72,25 @@ where
         ));
     }
 
-    // Get a mutable buffer to write to
+    // Create buffer with the exact requested length, initialized with zeros
     let mut buffer = vec![0u8; length_u32 as usize];
     
     // Copy call data using the context's copy_call_data method
+    // This method handles bounds checking and zero-filling automatically
     let copied_bytes = context.copy_call_data(&mut buffer, data_offset as usize, length_u32 as usize);
     
-    // Write the copied data to memory
-    memory.write_bytes(result_offset_u32, &buffer[..copied_bytes]).map_err(|e| {
+    // Write the entire buffer to memory (including any zero-filled portions)
+    // This ensures we always write exactly 'length' bytes as requested
+    memory.write_bytes(result_offset_u32, &buffer).map_err(|e| {
         host_error!("Failed to write call data to memory at offset {}: {}", result_offset, e);
         e
     })?;
 
     host_info!(
-        "call_data_copy completed: copied {} bytes from call data offset {} to memory offset {}",
+        "call_data_copy completed: wrote {} bytes to memory (copied {} bytes from call data, {} bytes zero-filled)",
+        length_u32,
         copied_bytes,
-        data_offset,
-        result_offset
+        length_u32 as usize - copied_bytes
     );
     Ok(())
 }
