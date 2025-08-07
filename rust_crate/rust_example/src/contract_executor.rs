@@ -65,8 +65,6 @@ impl ContractExecutor {
         let isolation = self.runtime.new_isolation()
             .map_err(|e| format!("创建隔离环境失败: {}", e))?;
         
-        context.set_call_data(vec![]);
-        
         let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone())
             .map_err(|e| format!("创建实例失败: {}", e))?;
         
