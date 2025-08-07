@@ -207,10 +207,10 @@ impl MockContext {
     /// Create a new mock context with the given WASM code
     /// The code will be prefixed with a 4-byte big-endian length header
     pub fn new(wasm_code: Vec<u8>, storage: Rc<RefCell<HashMap<String, Vec<u8>>>>) -> Self {
-        let prefixed_code = Self::create_prefixed_code(&wasm_code);
+        //let prefixed_code = Self::create_prefixed_code(&wasm_code);
         
-        println!("Created MockContext with original code length: {} bytes, prefixed length: {} bytes", 
-                   wasm_code.len(), prefixed_code.len());
+        // println!("Created MockContext with original code length: {} bytes, prefixed length: {} bytes", 
+        //            wasm_code.len(), prefixed_code.len());
         
         // Initialize mock addresses
         let mut address = [0u8; 20];
@@ -228,7 +228,7 @@ impl MockContext {
         let call_data = vec![0xf8, 0xa8, 0xfd, 0x6d]; // test() function selector
         
         Self {
-            contract_code: prefixed_code,
+            contract_code: wasm_code,
             storage,
             call_data,
             address,

@@ -19,11 +19,12 @@ name = "main"
 path = "src/main.rs"
 
 
-[[bin]]
-name = "main_counter"
-path = "src/main_counter.rs"
+[[example]]
+name = "counter"
+path = "src/counter_test.rs"
 
-[[bin]]
-name = "main_simple_token"
-path = "src/main_simple_token.rs"
+[[example]]
+name = "simple_token"
+path = "src/simple_token_test.rs"
+
 

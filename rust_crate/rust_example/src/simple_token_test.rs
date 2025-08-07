@@ -28,6 +28,8 @@ use dtvmcore_rust::evm::EvmContext;
 mod mock_context;
 use mock_context::MockContext;
 use evm_bridge::create_complete_evm_host_functions;
+mod contract_executor;
+use contract_executor::ContractExecutor;
 
 // SimpleToken contract function selectors (first 4 bytes of keccak256(function_signature))
 const NAME_SELECTOR: [u8; 4] = [0x06, 0xfd, 0xde, 0x03];           // name()
@@ -85,62 +87,42 @@ fn main() {
     println!("🪙 DTVM SimpleToken Contract Test");
     println!("=================================");
     
-    // Create runtime
-    let rt = ZenRuntime::new(None);
-    
-    // Create EVM host functions for SimpleToken contract
-    println!("
-=== Creating EVM Host Functions for SimpleToken ===");
-    let token_host_funcs = create_complete_evm_host_functions();
-    println!("✓ Created {} EVM host functions for SimpleToken contract", token_host_funcs.len());
-    
-    // Register the host module
-    let _host_module = rt.create_host_module("env", token_host_funcs.iter(), true).expect("Host module creation failed");
-    println!("✓ SimpleToken EVM host module registered successfully");
-
     // Load SimpleToken WASM module
-    println!("
-=== Loading SimpleToken WASM Module ===");
+    println!("=== Loading SimpleToken WASM Module ===");
     let token_wasm_bytes = fs::read("src/SimpleToken.wasm").expect("Failed to load SimpleToken.wasm");
     println!("✓ SimpleToken WASM file loaded: {} bytes", token_wasm_bytes.len());
-    
-    let wasm_mod = rt.load_module_from_bytes("SimpleToken.wasm", &token_wasm_bytes).expect("Load SimpleToken module error");
-    println!("✓ SimpleToken WASM module loaded successfully");
 
     // Create the single, shared storage for the entire test run
-    println!("
-=== Creating Shared EVM Storage ===");
+    println!("=== Creating Shared EVM Storage ===");
     let shared_storage = Rc::new(RefCell::new(HashMap::new()));
     println!("✓ Shared storage created.");
 
     // Create a single MockContext that will be used for all calls
-    let mut context = MockContext::new(vec![], shared_storage.clone());
+    // Now return_data and execution_status are also shared via Rc<RefCell<>>
+    let mut context = MockContext::new(token_wasm_bytes, shared_storage.clone());
+
+    let executor = ContractExecutor::new().expect("Failed to create contract executor");
 
     // Create test addresses
     let owner_address = create_test_address(1);
     let recipient_address = create_test_address(2);
     let spender_address = create_test_address(3);
 
-    println!("
-=== Testing SimpleToken Contract Functions ===");
+    println!("=== Testing SimpleToken Contract Functions ===");
     println!("👤 Owner address: 0x{}", hex::encode(&owner_address));
     println!("👤 Recipient address: 0x{}", hex::encode(&recipient_address));
     println!("👤 Spender address: 0x{}", hex::encode(&spender_address));
 
     // Test 1: Deploy the contract with initial supply
-    println!("
---- Test 1: Deploy SimpleToken Contract ---");
+    println!("--- Test 1: Deploy SimpleToken Contract ---");
     {
-        let isolation = rt.new_isolation().expect("Create isolation error");
         // Set constructor parameter: initial supply = 1000000 tokens (1M * 10^18 wei)
         let initial_supply = 1000000u64;
         let mut constructor_data = [0u8; 32];
         constructor_data[24..32].copy_from_slice(&initial_supply.to_be_bytes());
         context.set_call_data(constructor_data.to_vec());
         
-        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for deploy");
-        
-        match inst.call_wasm_func("deploy", &[]) {
+        match executor.deploy_contract("SimpleToken.wasm", &mut context) {
             Ok(_) => println!("✓ SimpleToken contract deployed successfully with initial supply: {}", initial_supply),
             Err(err) => {
                 println!("❌ Deploy contract error: {}", err);
@@ -150,15 +132,11 @@ fn main() {
     }
 
     // Test 2: Check token name
-    println!("
---- Test 2: Get Token Name ---");
+    println!("--- Test 2: Get Token Name ---");
     {
-        let isolation = rt.new_isolation().expect("Create isolation error");
         set_function_call_data(&mut context, &NAME_SELECTOR);
 
-        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for name");
-
-        match inst.call_wasm_func("call", &[]) {
+        match executor.call_contract_function("SimpleToken.wasm", &mut context) {
             Ok(_) => {
                 println!("✓ Name function executed successfully");
                 if context.has_return_data() {
@@ -172,15 +150,11 @@ fn main() {
     }
 
     // Test 3: Check token symbol
-    println!("
---- Test 3: Get Token Symbol ---");
+    println!("--- Test 3: Get Token Symbol ---");
     {
-        let isolation = rt.new_isolation().expect("Create isolation error");
         set_function_call_data(&mut context, &SYMBOL_SELECTOR);
 
-        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for symbol");
-
-        match inst.call_wasm_func("call", &[]) {
+        match executor.call_contract_function("SimpleToken.wasm", &mut context) {
             Ok(_) => {
                 println!("✓ Symbol function executed successfully");
                 if context.has_return_data() {
@@ -194,15 +168,11 @@ fn main() {
     }
 
     // Test 4: Check decimals
-    println!("
---- Test 4: Get Token Decimals ---");
+    println!("--- Test 4: Get Token Decimals ---");
     {
-        let isolation = rt.new_isolation().expect("Create isolation error");
         set_function_call_data(&mut context, &DECIMALS_SELECTOR);
 
-        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for decimals");
-
-        match inst.call_wasm_func("call", &[]) {
+        match executor.call_contract_function("SimpleToken.wasm", &mut context) {
             Ok(_) => {
                 println!("✓ Decimals function executed successfully");
                 if context.has_return_data() {
@@ -219,15 +189,11 @@ fn main() {
     }
 
     // Test 5: Check total supply
-    println!("
---- Test 5: Get Total Supply ---");
+    println!("--- Test 5: Get Total Supply ---");
     {
-        let isolation = rt.new_isolation().expect("Create isolation error");
         set_function_call_data(&mut context, &TOTAL_SUPPLY_SELECTOR);
 
-        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for totalSupply");
-
-        match inst.call_wasm_func("call", &[]) {
+        match executor.call_contract_function("SimpleToken.wasm", &mut context) {
             Ok(_) => {
                 println!("✓ TotalSupply function executed successfully");
                 if context.has_return_data() {
@@ -241,15 +207,11 @@ fn main() {
     }
 
     // Test 6: Check owner balance
-    println!("
---- Test 6: Get Owner Balance ---");
+    println!("--- Test 6: Get Owner Balance ---");
     {
-        let isolation = rt.new_isolation().expect("Create isolation error");
         set_function_call_data_with_address(&mut context, &BALANCE_OF_SELECTOR, &owner_address);
 
-        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for balanceOf");
-
-        match inst.call_wasm_func("call", &[]) {
+        match executor.call_contract_function("SimpleToken.wasm", &mut context) {
             Ok(_) => {
                 println!("✓ BalanceOf function executed successfully");
                 if context.has_return_data() {
@@ -263,31 +225,23 @@ fn main() {
     }
 
     // Test 7: Mint tokens to recipient
-    println!("
---- Test 7: Mint Tokens to Recipient ---");
+    println!("--- Test 7: Mint Tokens to Recipient ---");
     {
-        let isolation = rt.new_isolation().expect("Create isolation error");
         let mint_amount = 5000u64;
         set_function_call_data_with_address_and_amount(&mut context, &MINT_SELECTOR, &recipient_address, mint_amount);
 
-        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for mint");
-
-        match inst.call_wasm_func("call", &[]) {
+        match executor.call_contract_function("SimpleToken.wasm", &mut context) {
             Ok(_) => println!("✓ Mint function completed (tokens minted to recipient)"),
             Err(err) => println!("❌ Mint function error: {}", err),
         }
     }
 
     // Test 8: Check recipient balance after mint
-    println!("
---- Test 8: Get Recipient Balance After Mint ---");
+    println!("--- Test 8: Get Recipient Balance After Mint ---");
     {
-        let isolation = rt.new_isolation().expect("Create isolation error");
         set_function_call_data_with_address(&mut context, &BALANCE_OF_SELECTOR, &recipient_address);
 
-        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for balanceOf");
-
-        match inst.call_wasm_func("call", &[]) {
+        match executor.call_contract_function("SimpleToken.wasm", &mut context) {
             Ok(_) => {
                 println!("✓ BalanceOf function executed successfully");
                 if context.has_return_data() {
@@ -301,31 +255,23 @@ fn main() {
     }
 
     // Test 9: Transfer tokens from owner to spender
-    println!("
---- Test 9: Transfer Tokens from Owner to Spender ---");
+    println!("--- Test 9: Transfer Tokens from Owner to Spender ---");
     {
-        let isolation = rt.new_isolation().expect("Create isolation error");
         let transfer_amount = 1000u64;
         set_function_call_data_with_address_and_amount(&mut context, &TRANSFER_SELECTOR, &spender_address, transfer_amount);
 
-        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for transfer");
-
-        match inst.call_wasm_func("call", &[]) {
+        match executor.call_contract_function("SimpleToken.wasm", &mut context) {
             Ok(_) => println!("✓ Transfer function completed (tokens transferred to spender)"),
             Err(err) => println!("❌ Transfer function error: {}", err),
         }
     }
 
     // Test 10: Check spender balance after transfer
-    println!("
---- Test 10: Get Spender Balance After Transfer ---");
+    println!("--- Test 10: Get Spender Balance After Transfer ---");
     {
-        let isolation = rt.new_isolation().expect("Create isolation error");
         set_function_call_data_with_address(&mut context, &BALANCE_OF_SELECTOR, &spender_address);
 
-        let inst = wasm_mod.new_instance_with_context(isolation, 1000000, context.clone()).expect("Create instance error for balanceOf");
-
-        match inst.call_wasm_func("call", &[]) {
+        match executor.call_contract_function("SimpleToken.wasm", &mut context) {
             Ok(_) => {
                 println!("✓ BalanceOf function executed successfully");
                 if context.has_return_data() {
@@ -339,8 +285,7 @@ fn main() {
     }
 
     // Test 11: Check events
-    println!("
---- Test 11: Check Events ---");
+    println!("--- Test 11: Check Events ---");
     let events = context.get_events();
     println!("✓ Total events emitted: {}", events.len());
     

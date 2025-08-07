@@ -1,8 +1,8 @@
 #!/bin/bash
-rm -rf ./libzetaengine.a ./libutils_lib.a
-cp -f ../bazel-bin/libzetaengine.a .
-cp -f ../bazel-bin/libutils_lib.a .
-cp -f ../bazel-bin/external/zen_deps_asmjit/libasmjit.a .
+#rm -rf ./libzetaengine.a ./libutils_lib.a
+#cp -f ../bazel-bin/libzetaengine.a .
+#cp -f ../bazel-bin/libutils_lib.a .
+#cp -f ../bazel-bin/external/zen_deps_asmjit/libasmjit.a .
 # cp -f ../bazel-bin/external/+third_party_deps+zen_deps_asmjit/libasmjit.a .
 
 system_name="$(uname -s)"

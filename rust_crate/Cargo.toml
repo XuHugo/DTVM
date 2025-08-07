@@ -127,7 +127,3 @@ debug-assertions = false
 overflow-checks = false
 lto = true
 panic = 'abort'
-
-[[example]]
-name = "main_counter"
-path = "rust_example/src/main_counter.rs"
