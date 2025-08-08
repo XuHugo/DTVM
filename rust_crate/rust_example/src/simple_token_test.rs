@@ -23,11 +23,10 @@ use std::fs;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use dtvmcore_rust::core::runtime::ZenRuntime;
 use dtvmcore_rust::evm::EvmContext;
 mod mock_context;
-use mock_context::MockContext;
-use evm_bridge::create_complete_evm_host_functions;
+use mock_context::{MockContext, MockContextBuilder};
+
 mod contract_executor;
 use contract_executor::ContractExecutor;
 
@@ -82,6 +81,44 @@ fn create_test_address(byte: u8) -> [u8; 20] {
     addr
 }
 
+/// Helper function to decode ABI-encoded string from return data
+fn decode_abi_string(data: &[u8]) -> Result<String, String> {
+    if data.len() < 64 {
+        return Err("Data too short for ABI string".to_string());
+    }
+    
+    // Skip offset (first 32 bytes) and get length (next 32 bytes)
+    let length = u32::from_be_bytes(data[60..64].try_into().map_err(|_| "Invalid length")?);
+    let start = 64;
+    let end = start + length as usize;
+    
+    if end > data.len() {
+        return Err("String length exceeds data".to_string());
+    }
+    
+    String::from_utf8(data[start..end].to_vec()).map_err(|_| "Invalid UTF-8".to_string())
+}
+
+/// Helper function to decode uint256 from return data
+fn decode_uint256(data: &[u8]) -> Result<u64, String> {
+    if data.len() < 32 {
+        return Err("Data too short for uint256".to_string());
+    }
+    
+    // Take last 8 bytes for u64 (assuming the value fits in u64)
+    let bytes: [u8; 8] = data[24..32].try_into().map_err(|_| "Invalid uint256")?;
+    Ok(u64::from_be_bytes(bytes))
+}
+
+/// Helper function to decode uint8 from return data
+fn decode_uint8(data: &[u8]) -> Result<u8, String> {
+    if data.len() < 32 {
+        return Err("Data too short for uint8".to_string());
+    }
+    
+    Ok(data[31]) // Last byte
+}
+
 fn main() {
     env_logger::init();
     println!("🪙 DTVM SimpleToken Contract Test");
@@ -98,8 +135,10 @@ fn main() {
     println!("✓ Shared storage created.");
 
     // Create a single MockContext that will be used for all calls
-    // Now return_data and execution_status are also shared via Rc<RefCell<>>
-    let mut context = MockContext::new(token_wasm_bytes, shared_storage.clone());
+    let mut context = MockContextBuilder::new()
+                    .with_storage(shared_storage.clone())
+                    .with_code(token_wasm_bytes)
+                    .build();
 
     let executor = ContractExecutor::new().expect("Failed to create contract executor");
 
@@ -122,8 +161,47 @@ fn main() {
         constructor_data[24..32].copy_from_slice(&initial_supply.to_be_bytes());
         context.set_call_data(constructor_data.to_vec());
         
+        // Set the caller as the owner (this will be the token owner)
+        context.set_caller(owner_address);
+        
         match executor.deploy_contract("SimpleToken.wasm", &mut context) {
-            Ok(_) => println!("✓ SimpleToken contract deployed successfully with initial supply: {}", initial_supply),
+            Ok(_) => {
+                println!("✓ SimpleToken contract deployed successfully with initial supply: {}", initial_supply);
+                
+                // Check deployment events
+                let events = context.get_events();
+                println!("   📋 Deployment events: {} emitted", events.len());
+                
+                if events.len() > 0 {
+                    for (i, event) in events.iter().enumerate() {
+                        println!("   Event {}: contract=0x{}, topics={}, data_len={}", 
+                                 i + 1, 
+                                 hex::encode(&event.contract_address), 
+                                 event.topics.len(), 
+                                 event.data.len());
+                        
+                        // Check if this is a Transfer event (topic[0] = keccak256("Transfer(address,address,uint256)"))
+                        if event.topics.len() >= 3 {
+                            let transfer_topic = &event.topics[0];
+                            // Transfer event signature: 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef
+                            if transfer_topic[0] == 0xdd && transfer_topic[1] == 0xf2 {
+                                println!("   ✅ Found Transfer event: from=0x{}, to=0x{}", 
+                                         hex::encode(&event.topics[1][12..32]), // from address (last 20 bytes)
+                                         hex::encode(&event.topics[2][12..32])); // to address (last 20 bytes)
+                                
+                                // Decode amount from data (first 32 bytes)
+                                if event.data.len() >= 32 {
+                                    let amount_bytes = &event.data[24..32]; // last 8 bytes for u64
+                                    let amount = u64::from_be_bytes(amount_bytes.try_into().unwrap_or([0; 8]));
+                                    println!("   💰 Transfer amount: {} tokens", amount);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    println!("   ⚠️ No events emitted during deployment");
+                }
+            },
             Err(err) => {
                 println!("❌ Deploy contract error: {}", err);
                 return; // Stop if deploy fails
@@ -140,7 +218,14 @@ fn main() {
             Ok(_) => {
                 println!("✓ Name function executed successfully");
                 if context.has_return_data() {
-                    println!("   ✅ Return data: 0x{}", context.get_return_data_hex());
+                    let return_data = context.get_return_data();
+                    println!("   ✅ Raw return data: 0x{}", context.get_return_data_hex());
+                    
+                    // Decode the ABI-encoded string
+                    match decode_abi_string(&return_data) {
+                        Ok(name) => println!("   📝 Token name: \"{}\"", name),
+                        Err(err) => println!("   ⚠️ Failed to decode name: {}", err),
+                    }
                 } else {
                     println!("   ❌ No return data from name()");
                 }
@@ -158,7 +243,14 @@ fn main() {
             Ok(_) => {
                 println!("✓ Symbol function executed successfully");
                 if context.has_return_data() {
-                    println!("   ✅ Return data: 0x{}", context.get_return_data_hex());
+                    let return_data = context.get_return_data();
+                    println!("   ✅ Raw return data: 0x{}", context.get_return_data_hex());
+                    
+                    // Decode the ABI-encoded string
+                    match decode_abi_string(&return_data) {
+                        Ok(symbol) => println!("   🏷️ Token symbol: \"{}\"", symbol),
+                        Err(err) => println!("   ⚠️ Failed to decode symbol: {}", err),
+                    }
                 } else {
                     println!("   ❌ No return data from symbol()");
                 }
@@ -177,9 +269,13 @@ fn main() {
                 println!("✓ Decimals function executed successfully");
                 if context.has_return_data() {
                     let return_data = context.get_return_data();
-                    println!("   ✅ Return data: 0x{} (decimals: {})", 
-                             context.get_return_data_hex(), 
-                             return_data.last().unwrap_or(&0));
+                    println!("   ✅ Raw return data: 0x{}", context.get_return_data_hex());
+                    
+                    // Decode the uint8 value
+                    match decode_uint8(&return_data) {
+                        Ok(decimals) => println!("   🔢 Token decimals: {}", decimals),
+                        Err(err) => println!("   ⚠️ Failed to decode decimals: {}", err),
+                    }
                 } else {
                     println!("   ❌ No return data from decimals()");
                 }
@@ -197,7 +293,14 @@ fn main() {
             Ok(_) => {
                 println!("✓ TotalSupply function executed successfully");
                 if context.has_return_data() {
-                    println!("   ✅ Return data: 0x{}", context.get_return_data_hex());
+                    let return_data = context.get_return_data();
+                    println!("   ✅ Raw return data: 0x{}", context.get_return_data_hex());
+                    
+                    // Decode the uint256 value
+                    match decode_uint256(&return_data) {
+                        Ok(total_supply) => println!("   💰 Total supply: {} tokens", total_supply),
+                        Err(err) => println!("   ⚠️ Failed to decode total supply: {}", err),
+                    }
                 } else {
                     println!("   ❌ No return data from totalSupply()");
                 }
@@ -215,7 +318,14 @@ fn main() {
             Ok(_) => {
                 println!("✓ BalanceOf function executed successfully");
                 if context.has_return_data() {
-                    println!("   ✅ Owner balance: 0x{}", context.get_return_data_hex());
+                    let return_data = context.get_return_data();
+                    println!("   ✅ Raw return data: 0x{}", context.get_return_data_hex());
+                    
+                    // Decode the uint256 balance
+                    match decode_uint256(&return_data) {
+                        Ok(balance) => println!("   👤 Owner balance: {} tokens", balance),
+                        Err(err) => println!("   ⚠️ Failed to decode balance: {}", err),
+                    }
                 } else {
                     println!("   ❌ No return data from balanceOf()");
                 }
@@ -231,7 +341,13 @@ fn main() {
         set_function_call_data_with_address_and_amount(&mut context, &MINT_SELECTOR, &recipient_address, mint_amount);
 
         match executor.call_contract_function("SimpleToken.wasm", &mut context) {
-            Ok(_) => println!("✓ Mint function completed (tokens minted to recipient)"),
+            Ok(_) => {
+                println!("✓ Mint function completed");
+                if context.has_return_data() {
+                    println!("   ✅ Raw return data: 0x{}", context.get_return_data_hex());
+                }
+                println!("   🪙 Minted {} tokens to recipient", mint_amount);
+            },
             Err(err) => println!("❌ Mint function error: {}", err),
         }
     }
@@ -245,7 +361,14 @@ fn main() {
             Ok(_) => {
                 println!("✓ BalanceOf function executed successfully");
                 if context.has_return_data() {
-                    println!("   ✅ Recipient balance: 0x{}", context.get_return_data_hex());
+                    let return_data = context.get_return_data();
+                    println!("   ✅ Raw return data: 0x{}", context.get_return_data_hex());
+                    
+                    // Decode the uint256 balance
+                    match decode_uint256(&return_data) {
+                        Ok(balance) => println!("   👤 Recipient balance: {} tokens", balance),
+                        Err(err) => println!("   ⚠️ Failed to decode balance: {}", err),
+                    }
                 } else {
                     println!("   ❌ No return data from balanceOf()");
                 }
@@ -261,7 +384,25 @@ fn main() {
         set_function_call_data_with_address_and_amount(&mut context, &TRANSFER_SELECTOR, &spender_address, transfer_amount);
 
         match executor.call_contract_function("SimpleToken.wasm", &mut context) {
-            Ok(_) => println!("✓ Transfer function completed (tokens transferred to spender)"),
+            Ok(_) => {
+                println!("✓ Transfer function completed");
+                if context.has_return_data() {
+                    let return_data = context.get_return_data();
+                    println!("   ✅ Raw return data: 0x{}", context.get_return_data_hex());
+                    
+                    // Decode boolean return value (success/failure)
+                    match decode_uint256(&return_data) {
+                        Ok(result) => {
+                            let success = result == 1;
+                            println!("   {} Transfer result: {}", 
+                                     if success { "✅" } else { "❌" }, 
+                                     if success { "SUCCESS" } else { "FAILED" });
+                        },
+                        Err(err) => println!("   ⚠️ Failed to decode transfer result: {}", err),
+                    }
+                }
+                println!("   💸 Transferred {} tokens to spender", transfer_amount);
+            },
             Err(err) => println!("❌ Transfer function error: {}", err),
         }
     }
@@ -275,7 +416,14 @@ fn main() {
             Ok(_) => {
                 println!("✓ BalanceOf function executed successfully");
                 if context.has_return_data() {
-                    println!("   ✅ Spender balance: 0x{}", context.get_return_data_hex());
+                    let return_data = context.get_return_data();
+                    println!("   ✅ Raw return data: 0x{}", context.get_return_data_hex());
+                    
+                    // Decode the uint256 balance
+                    match decode_uint256(&return_data) {
+                        Ok(balance) => println!("   👤 Spender balance: {} tokens", balance),
+                        Err(err) => println!("   ⚠️ Failed to decode balance: {}", err),
+                    }
                 } else {
                     println!("   ❌ No return data from balanceOf()");
                 }
@@ -297,6 +445,40 @@ fn main() {
                      hex::encode(&event.contract_address), 
                      event.topics.len(), 
                      event.data.len());
+            
+            // Try to decode Transfer events
+            if event.topics.len() >= 3 {
+                let transfer_topic = &event.topics[0];
+                // Transfer event signature: 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef
+                if transfer_topic[0] == 0xdd && transfer_topic[1] == 0xf2 {
+                    let from_addr = &event.topics[1][12..32]; // from address (last 20 bytes)
+                    let to_addr = &event.topics[2][12..32];   // to address (last 20 bytes)
+                    
+                    println!("     🔄 Transfer Event:");
+                    println!("       From: 0x{}", hex::encode(from_addr));
+                    println!("       To:   0x{}", hex::encode(to_addr));
+                    
+                    // Decode amount from data
+                    if event.data.len() >= 32 {
+                        match decode_uint256(&event.data) {
+                            Ok(amount) => println!("       Amount: {} tokens", amount),
+                            Err(_) => println!("       Amount: <decode error>"),
+                        }
+                    }
+                }
+            }
+            
+            // Try to decode Mint events (if they have 2 topics)
+            if event.topics.len() == 2 {
+                // This might be a Mint event - check the first topic
+                println!("     🪙 Possible Mint Event:");
+                if event.data.len() >= 32 {
+                    match decode_uint256(&event.data) {
+                        Ok(amount) => println!("       Amount: {} tokens", amount),
+                        Err(_) => println!("       Amount: <decode error>"),
+                    }
+                }
+            }
         }
     }
     

@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use dtvmcore_rust::core::runtime::ZenRuntime;
 use dtvmcore_rust::evm::EvmContext;
 mod mock_context;
-use mock_context::MockContext;
+use mock_context::{MockContext,MockContextBuilder};
 use evm_bridge::create_complete_evm_host_functions;
 mod contract_executor;
 use contract_executor::ContractExecutor;
@@ -52,7 +52,10 @@ fn main() {
 
     // Create a single MockContext that will be used for all calls
     // Now return_data and execution_status are also shared via Rc<RefCell<>>
-    let mut context = MockContext::new(counter_wasm_bytes, shared_storage.clone());
+    let mut context = MockContextBuilder::new()
+                    .with_storage(shared_storage.clone())
+                    .with_code(counter_wasm_bytes)
+                    .build();
 
     let executor = ContractExecutor::new().expect("Failed to create contract executor");
 

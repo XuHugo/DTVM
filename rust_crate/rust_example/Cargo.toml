@@ -18,7 +18,6 @@ env_logger = { version = "0.10" }
 name = "main"
 path = "src/main.rs"
 
-
 [[example]]
 name = "counter"
 path = "src/counter_test.rs"

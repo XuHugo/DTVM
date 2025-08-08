@@ -203,16 +203,23 @@ pub struct MockContext {
     events: Rc<RefCell<Vec<LogEvent>>>,
 }
 
-impl MockContext {
-    /// Create a new mock context with the given WASM code
-    /// The code will be prefixed with a 4-byte big-endian length header
-    pub fn new(wasm_code: Vec<u8>, storage: Rc<RefCell<HashMap<String, Vec<u8>>>>) -> Self {
-        //let prefixed_code = Self::create_prefixed_code(&wasm_code);
-        
-        // println!("Created MockContext with original code length: {} bytes, prefixed length: {} bytes", 
-        //            wasm_code.len(), prefixed_code.len());
-        
-        // Initialize mock addresses
+/// Builder for MockContext with fluent interface
+pub struct MockContextBuilder {
+    contract_code: Vec<u8>,
+    storage: Option<Rc<RefCell<HashMap<String, Vec<u8>>>>>,
+    call_data: Vec<u8>,
+    address: [u8; 20],
+    caller: [u8; 20],
+    call_value: [u8; 32],
+    chain_id: [u8; 32],
+    block_info: BlockInfo,
+    tx_info: TransactionInfo,
+}
+
+impl MockContextBuilder {
+    /// Create a new builder with default values
+    pub fn new() -> Self {
+        // Initialize default mock addresses
         let mut address = [0u8; 20];
         address[0] = 0x05; // Mock contract address
         
@@ -228,8 +235,8 @@ impl MockContext {
         let call_data = vec![0xf8, 0xa8, 0xfd, 0x6d]; // test() function selector
         
         Self {
-            contract_code: wasm_code,
-            storage,
+            contract_code: Vec::new(),
+            storage: None,
             call_data,
             address,
             caller,
@@ -237,10 +244,245 @@ impl MockContext {
             chain_id,
             block_info: BlockInfo::default(),
             tx_info: TransactionInfo::default(),
+        }
+    }
+    
+    /// Set the contract WASM code
+    pub fn with_code(mut self, code: Vec<u8>) -> Self {
+        self.contract_code = code;
+        self
+    }
+    
+    /// Set the storage (shared or independent)
+    pub fn with_storage(mut self, storage: Rc<RefCell<HashMap<String, Vec<u8>>>>) -> Self {
+        self.storage = Some(storage);
+        self
+    }
+    
+    /// Create a new independent storage
+    pub fn with_new_storage(mut self) -> Self {
+        self.storage = Some(Rc::new(RefCell::new(HashMap::new())));
+        self
+    }
+    
+    /// Set call data
+    pub fn with_call_data(mut self, data: Vec<u8>) -> Self {
+        self.call_data = data;
+        self
+    }
+    
+    /// Set call data from hex string
+    pub fn with_call_data_hex(mut self, hex_str: &str) -> Result<Self, String> {
+        let clean_hex = if hex_str.starts_with("0x") || hex_str.starts_with("0X") {
+            &hex_str[2..]
+        } else {
+            hex_str
+        };
+        
+        match hex::decode(clean_hex) {
+            Ok(data) => {
+                self.call_data = data;
+                Ok(self)
+            }
+            Err(e) => Err(format!("Invalid hex string '{}': {}", hex_str, e)),
+        }
+    }
+    
+    /// Set contract address
+    pub fn with_address(mut self, address: [u8; 20]) -> Self {
+        self.address = address;
+        self
+    }
+    
+    /// Set contract address from hex string
+    pub fn with_address_hex(mut self, hex_str: &str) -> Result<Self, String> {
+        let clean_hex = if hex_str.starts_with("0x") || hex_str.starts_with("0X") {
+            &hex_str[2..]
+        } else {
+            hex_str
+        };
+        
+        if clean_hex.len() != 40 {
+            return Err(format!("Address must be 40 hex characters, got {}", clean_hex.len()));
+        }
+        
+        match hex::decode(clean_hex) {
+            Ok(bytes) => {
+                if bytes.len() == 20 {
+                    let mut address = [0u8; 20];
+                    address.copy_from_slice(&bytes);
+                    self.address = address;
+                    Ok(self)
+                } else {
+                    Err("Address must be exactly 20 bytes".to_string())
+                }
+            }
+            Err(e) => Err(format!("Invalid hex address '{}': {}", hex_str, e)),
+        }
+    }
+    
+    /// Set caller address
+    pub fn with_caller(mut self, caller: [u8; 20]) -> Self {
+        self.caller = caller;
+        self
+    }
+    
+    /// Set caller address from hex string
+    pub fn with_caller_hex(mut self, hex_str: &str) -> Result<Self, String> {
+        let clean_hex = if hex_str.starts_with("0x") || hex_str.starts_with("0X") {
+            &hex_str[2..]
+        } else {
+            hex_str
+        };
+        
+        if clean_hex.len() != 40 {
+            return Err(format!("Caller address must be 40 hex characters, got {}", clean_hex.len()));
+        }
+        
+        match hex::decode(clean_hex) {
+            Ok(bytes) => {
+                if bytes.len() == 20 {
+                    let mut caller = [0u8; 20];
+                    caller.copy_from_slice(&bytes);
+                    self.caller = caller;
+                    Ok(self)
+                } else {
+                    Err("Caller address must be exactly 20 bytes".to_string())
+                }
+            }
+            Err(e) => Err(format!("Invalid hex caller address '{}': {}", hex_str, e)),
+        }
+    }
+    
+    /// Set call value
+    pub fn with_call_value(mut self, value: [u8; 32]) -> Self {
+        self.call_value = value;
+        self
+    }
+    
+    /// Set call value from u64 (in wei)
+    pub fn with_call_value_wei(mut self, wei: u64) -> Self {
+        let mut value = [0u8; 32];
+        value[24..32].copy_from_slice(&wei.to_be_bytes());
+        self.call_value = value;
+        self
+    }
+    
+    /// Set chain ID
+    pub fn with_chain_id(mut self, chain_id: [u8; 32]) -> Self {
+        self.chain_id = chain_id;
+        self
+    }
+    
+    /// Set chain ID from u64
+    pub fn with_chain_id_u64(mut self, chain_id: u64) -> Self {
+        let mut id = [0u8; 32];
+        id[24..32].copy_from_slice(&chain_id.to_be_bytes());
+        self.chain_id = id;
+        self
+    }
+    
+    /// Set block information
+    pub fn with_block_info(mut self, block_info: BlockInfo) -> Self {
+        self.block_info = block_info;
+        self
+    }
+    
+    /// Set block number
+    pub fn with_block_number(mut self, number: i64) -> Self {
+        self.block_info.number = number;
+        self
+    }
+    
+    /// Set block timestamp
+    pub fn with_block_timestamp(mut self, timestamp: i64) -> Self {
+        self.block_info.timestamp = timestamp;
+        self
+    }
+    
+    /// Set block gas limit
+    pub fn with_block_gas_limit(mut self, gas_limit: i64) -> Self {
+        self.block_info.gas_limit = gas_limit;
+        self
+    }
+    
+    /// Set transaction information
+    pub fn with_tx_info(mut self, tx_info: TransactionInfo) -> Self {
+        self.tx_info = tx_info;
+        self
+    }
+    
+    /// Set transaction origin
+    pub fn with_tx_origin(mut self, origin: [u8; 20]) -> Self {
+        self.tx_info.origin = origin;
+        self
+    }
+    
+    /// Set gas price
+    pub fn with_gas_price(mut self, gas_price: [u8; 32]) -> Self {
+        self.tx_info.gas_price = gas_price;
+        self
+    }
+    
+    /// Set gas price from u64 (in wei)
+    pub fn with_gas_price_wei(mut self, wei: u64) -> Self {
+        let mut price = [0u8; 32];
+        price[24..32].copy_from_slice(&wei.to_be_bytes());
+        self.tx_info.gas_price = price;
+        self
+    }
+    
+    /// Set gas left
+    pub fn with_gas_left(mut self, gas: i64) -> Self {
+        self.tx_info.gas_left = gas;
+        self
+    }
+    
+    /// Build the MockContext
+    pub fn build(self) -> MockContext {
+        let storage = self.storage.unwrap_or_else(|| {
+            Rc::new(RefCell::new(HashMap::new()))
+        });
+        
+        println!("Created MockContext with original code length: {} bytes, prefixed length: {} bytes", 
+                   self.contract_code.len(), self.contract_code.len() + 4);
+        
+        MockContext {
+            contract_code: self.contract_code,
+            storage,
+            call_data: self.call_data,
+            address: self.address,
+            caller: self.caller,
+            call_value: self.call_value,
+            chain_id: self.chain_id,
+            block_info: self.block_info,
+            tx_info: self.tx_info,
             return_data: Rc::new(RefCell::new(Vec::new())),
             execution_status: Rc::new(RefCell::new(None)),
             events: Rc::new(RefCell::new(Vec::new())),
         }
+    }
+}
+
+impl Default for MockContextBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MockContext {
+    /// Create a new MockContext builder
+    pub fn builder() -> MockContextBuilder {
+        MockContextBuilder::new()
+    }
+    
+    /// Create a new mock context with the given WASM code (legacy method)
+    /// The code will be prefixed with a 4-byte big-endian length header
+    pub fn new(wasm_code: Vec<u8>, storage: Rc<RefCell<HashMap<String, Vec<u8>>>>) -> Self {
+        Self::builder()
+            .with_code(wasm_code)
+            .with_storage(storage)
+            .build()
     }
 
     /// Create prefixed code with 4-byte big-endian length header
@@ -387,6 +629,100 @@ impl MockContext {
     pub fn set_gas_left(&mut self, gas: i64) {
         println!("Setting gas left: {}", gas);
         self.tx_info.gas_left = gas;
+    }
+
+    /// Set caller address
+    pub fn set_caller(&mut self, caller: [u8; 20]) {
+        println!("Setting caller address: 0x{}", hex::encode(&caller));
+        self.caller = caller;
+    }
+
+    /// Set caller address from hex string
+    pub fn set_caller_hex(&mut self, hex_str: &str) -> Result<(), String> {
+        let clean_hex = if hex_str.starts_with("0x") || hex_str.starts_with("0X") {
+            &hex_str[2..]
+        } else {
+            hex_str
+        };
+        
+        if clean_hex.len() != 40 {
+            return Err(format!("Caller address must be 40 hex characters, got {}", clean_hex.len()));
+        }
+        
+        match hex::decode(clean_hex) {
+            Ok(bytes) => {
+                if bytes.len() == 20 {
+                    let mut caller = [0u8; 20];
+                    caller.copy_from_slice(&bytes);
+                    self.set_caller(caller);
+                    Ok(())
+                } else {
+                    Err("Caller address must be exactly 20 bytes".to_string())
+                }
+            }
+            Err(e) => Err(format!("Invalid hex caller address '{}': {}", hex_str, e)),
+        }
+    }
+
+    /// Set contract address
+    pub fn set_address(&mut self, address: [u8; 20]) {
+        println!("Setting contract address: 0x{}", hex::encode(&address));
+        self.address = address;
+    }
+
+    /// Set contract address from hex string
+    pub fn set_address_hex(&mut self, hex_str: &str) -> Result<(), String> {
+        let clean_hex = if hex_str.starts_with("0x") || hex_str.starts_with("0X") {
+            &hex_str[2..]
+        } else {
+            hex_str
+        };
+        
+        if clean_hex.len() != 40 {
+            return Err(format!("Address must be 40 hex characters, got {}", clean_hex.len()));
+        }
+        
+        match hex::decode(clean_hex) {
+            Ok(bytes) => {
+                if bytes.len() == 20 {
+                    let mut address = [0u8; 20];
+                    address.copy_from_slice(&bytes);
+                    self.set_address(address);
+                    Ok(())
+                } else {
+                    Err("Address must be exactly 20 bytes".to_string())
+                }
+            }
+            Err(e) => Err(format!("Invalid hex address '{}': {}", hex_str, e)),
+        }
+    }
+
+    /// Set call value
+    pub fn set_call_value(&mut self, value: [u8; 32]) {
+        println!("Setting call value: 0x{}", hex::encode(&value));
+        self.call_value = value;
+    }
+
+    /// Set call value from u64 (in wei)
+    pub fn set_call_value_wei(&mut self, wei: u64) {
+        let mut value = [0u8; 32];
+        value[24..32].copy_from_slice(&wei.to_be_bytes());
+        println!("Setting call value: {} wei (0x{})", wei, hex::encode(&value));
+        self.call_value = value;
+    }
+
+    /// Set chain ID
+    pub fn set_chain_id(&mut self, chain_id: [u8; 32]) {
+        println!("Setting chain ID: 0x{}", hex::encode(&chain_id));
+        self.chain_id = chain_id;
+    }
+
+    /// Set chain ID from u64
+    pub fn set_chain_id_u64(&mut self, chain_id: u64) {
+        let mut id = [0u8; 32];
+        id[24..32].copy_from_slice(&chain_id.to_be_bytes());
+        println!("Setting chain ID: {} (0x{})", chain_id, hex::encode(&id));
+        self.chain_id = id;
     }
 
     /// Consume gas and return whether successful
