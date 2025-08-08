@@ -108,10 +108,11 @@ where
     T: EvmContext,
 {
     let context = &instance.extra_ctx;
-    let gas_left = context.get_gas_left();
+    let gas_left = instance.get_gas_left();
+    //let gas_left = context.get_gas_left();
     
     host_info!("get_gas_left called, returning: {}", gas_left);
-    gas_left
+    gas_left as i64
 }
 
 /// Get the transaction gas price

@@ -150,7 +150,7 @@ impl Default for TransactionInfo {
         Self {
             origin,
             gas_price,
-            gas_left: 1000000, // Default gas limit
+            gas_left: 100, // Default gas limit
         }
     }
 }
