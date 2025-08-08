@@ -42,7 +42,7 @@ fn main() {
     
     // Load counter WASM module
     println!("=== Loading Counter WASM Module ===");
-    let counter_wasm_bytes = fs::read("src/counter.wasm").expect("Failed to load counter.wasm");
+    let counter_wasm_bytes = fs::read("../example/counter.wasm").expect("Failed to load counter.wasm");
     println!("✓ Counter WASM file loaded: {} bytes", counter_wasm_bytes.len());
 
     // Create the single, shared storage for the entire test run

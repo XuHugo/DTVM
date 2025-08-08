@@ -812,6 +812,35 @@ impl MockContext {
     pub fn get_return_data_hex(&self) -> String {
         hex::encode(&*self.return_data.borrow())
     }
+
+    /// Set block coinbase address
+    pub fn set_block_coinbase(&mut self, coinbase: [u8; 20]) {
+        println!("Setting block coinbase: 0x{}", hex::encode(&coinbase));
+        self.block_info.coinbase = coinbase;
+    }
+
+    /// Set base fee
+    pub fn set_base_fee(&mut self, base_fee: [u8; 32]) {
+        println!("Setting base fee: 0x{}", hex::encode(&base_fee));
+        self.block_info.base_fee = base_fee;
+    }
+
+    /// Set blob base fee
+    pub fn set_blob_base_fee(&mut self, blob_base_fee: [u8; 32]) {
+        println!("Setting blob base fee: 0x{}", hex::encode(&blob_base_fee));
+        self.block_info.blob_base_fee = blob_base_fee;
+    }
+
+    /// Set block previous randao
+    pub fn set_block_prev_randao(&mut self, prev_randao: [u8; 32]) {
+        println!("Setting block prev randao: 0x{}", hex::encode(&prev_randao));
+        self.block_info.prev_randao = prev_randao;
+    }
+
+    /// Clear all emitted events
+    pub fn clear_events(&mut self) {
+        self.events.borrow_mut().clear();
+    }
 }
 
 // Implement the EvmContext trait for MockContext

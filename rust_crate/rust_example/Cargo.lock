@@ -238,6 +238,7 @@ dependencies = [
  "hex",
  "libc",
  "log",
+ "sha3",
 ]
 
 [[package]]

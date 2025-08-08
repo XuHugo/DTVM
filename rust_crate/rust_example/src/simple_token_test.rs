@@ -26,7 +26,6 @@ use std::collections::HashMap;
 use dtvmcore_rust::evm::EvmContext;
 mod mock_context;
 use mock_context::{MockContext, MockContextBuilder};
-
 mod contract_executor;
 use contract_executor::ContractExecutor;
 
@@ -126,7 +125,7 @@ fn main() {
     
     // Load SimpleToken WASM module
     println!("=== Loading SimpleToken WASM Module ===");
-    let token_wasm_bytes = fs::read("src/SimpleToken.wasm").expect("Failed to load SimpleToken.wasm");
+    let token_wasm_bytes = fs::read("../example/SimpleToken.wasm").expect("Failed to load SimpleToken.wasm");
     println!("✓ SimpleToken WASM file loaded: {} bytes", token_wasm_bytes.len());
 
     // Create the single, shared storage for the entire test run
