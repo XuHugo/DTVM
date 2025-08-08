@@ -337,7 +337,7 @@ pub trait ContractCallProvider {
         gas: i64,
     ) -> ContractCallResult;
     
-    /// Create a new contract (CREATE opcode)
+    /// Create a new contract (CREATE or CREATE2 opcode)
     fn create_contract(
         &self,
         creator: &[u8; 20],
@@ -345,6 +345,8 @@ pub trait ContractCallProvider {
         code: &[u8],
         data: &[u8],
         gas: i64,
+        salt: Option<[u8; 32]>,
+        is_create2: bool,
     ) -> ContractCreateResult;
 }
 

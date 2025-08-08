@@ -432,12 +432,12 @@ extern "C" fn call_contract(wasm_inst: *mut ZenInstanceExtern, gas: i64, addr_of
     match dtvmcore_rust::evm::host_functions::contract::call_contract(inst, gas, addr_offset, value_offset, data_offset, data_length) {
         Ok(result) => {
             println!("[EVM] call_contract succeeded, returned: {}", result);
-            result
+            0
         }
         Err(e) => {
             println!("[EVM] call_contract failed: {}", e);
             inst.set_exception_by_hostapi(9);
-            0
+            1
         }
     }
 }
@@ -448,12 +448,12 @@ extern "C" fn call_code(wasm_inst: *mut ZenInstanceExtern, gas: i64, addr_offset
     match dtvmcore_rust::evm::host_functions::contract::call_code(inst, gas, addr_offset, value_offset, data_offset, data_length) {
         Ok(result) => {
             println!("[EVM] call_code succeeded, returned: {}", result);
-            result
+            0
         }
         Err(e) => {
             println!("[EVM] call_code failed: {}", e);
             inst.set_exception_by_hostapi(9);
-            0
+            1
         }
     }
 }
@@ -464,12 +464,12 @@ extern "C" fn call_delegate(wasm_inst: *mut ZenInstanceExtern, gas: i64, addr_of
     match dtvmcore_rust::evm::host_functions::contract::call_delegate(inst, gas, addr_offset, data_offset, data_length) {
         Ok(result) => {
             println!("[EVM] call_delegate succeeded, returned: {}", result);
-            result
+            0
         }
         Err(e) => {
             println!("[EVM] call_delegate failed: {}", e);
             inst.set_exception_by_hostapi(9);
-            0
+            1
         }
     }
 }
@@ -480,20 +480,20 @@ extern "C" fn call_static(wasm_inst: *mut ZenInstanceExtern, gas: i64, addr_offs
     match dtvmcore_rust::evm::host_functions::contract::call_static(inst, gas, addr_offset, data_offset, data_length) {
         Ok(result) => {
             println!("[EVM] call_static succeeded, returned: {}", result);
-            result
+            0
         }
         Err(e) => {
             println!("[EVM] call_static failed: {}", e);
             inst.set_exception_by_hostapi(9);
-            0
+            1
         }
     }
 }
 
-extern "C" fn create_contract(wasm_inst: *mut ZenInstanceExtern, value_offset: i32, code_offset: i32, code_length: i32, data_offset: i32, data_length: i32, result_offset: i32) -> i32 {
+extern "C" fn create_contract(wasm_inst: *mut ZenInstanceExtern, value_offset: i32, code_offset: i32, code_length: i32, data_offset: i32, data_length: i32, salt_offset: i32, is_create2: i32, result_offset: i32) -> i32 {
     let inst: &MockInstance = ZenInstance::from_raw_pointer(wasm_inst);
     
-    match dtvmcore_rust::evm::host_functions::contract::create_contract(inst, value_offset, code_offset, code_length, data_offset, data_length, result_offset) {
+    match dtvmcore_rust::evm::host_functions::contract::create_contract(inst, value_offset, code_offset, code_length, data_offset, data_length, salt_offset, is_create2, result_offset) {
         Ok(result) => {
             println!("[EVM] create_contract succeeded, returned: {}", result);
             result
@@ -505,6 +505,8 @@ extern "C" fn create_contract(wasm_inst: *mut ZenInstanceExtern, value_offset: i
         }
     }
 }
+
+
 
 // ============================================================================
 // Control Operations - For execution control
@@ -841,7 +843,7 @@ pub fn create_complete_evm_host_functions() -> Vec<ZenHostFuncDesc> {
         },
         ZenHostFuncDesc {
             name: "createContract".to_string(),
-            arg_types: vec![ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32],
+            arg_types: vec![ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32, ZenValueType::I32],
             ret_types: vec![ZenValueType::I32],
             ptr: create_contract as *const cty::c_void,
         },

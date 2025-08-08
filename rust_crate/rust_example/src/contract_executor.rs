@@ -5,10 +5,7 @@
 //! 
 //! 提供可复用的合约执行功能，支持部署和调用智能合约
 
-use std::fs;
 use std::rc::Rc;
-use std::cell::RefCell;
-use std::collections::HashMap;
 use dtvmcore_rust::core::runtime::ZenRuntime;
 use dtvmcore_rust::evm::EvmContext;
 use crate::mock_context::MockContext;

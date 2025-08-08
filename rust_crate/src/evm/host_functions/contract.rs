@@ -336,18 +336,22 @@ pub fn create_contract<T>(
     code_length: i32,
     data_offset: i32,
     data_length: i32,
+    salt_offset: i32,
+    is_create2: i32,
     result_offset: i32,
 ) -> HostFunctionResult<i32>
 where
     T: EvmContext + ContractCallProvider,
 {
     host_info!(
-        "create_contract called: value_offset={}, code_offset={}, code_length={}, data_offset={}, data_length={}, result_offset={}",
+        "create_contract called: value_offset={}, code_offset={}, code_length={}, data_offset={}, data_length={}, salt_offset={}, is_create2={}, result_offset={}",
         value_offset,
         code_offset,
         code_length,
         data_offset,
         data_length,
+        salt_offset,
+        is_create2,
         result_offset
     );
 
@@ -358,6 +362,11 @@ where
     let value_offset_u32 = validate_bytes32_param(instance, value_offset)?;
     let (code_offset_u32, code_length_u32) = validate_data_param(instance, code_offset, code_length)?;
     let (data_offset_u32, data_length_u32) = validate_data_param(instance, data_offset, data_length)?;
+    let salt_offset_u32 = if is_create2 != 0 { 
+        Some(validate_bytes32_param(instance, salt_offset)?) 
+    } else { 
+        None 
+    };
     let result_offset_u32 = validate_address_param(instance, result_offset)?;
 
     // Read parameters
@@ -376,17 +385,24 @@ where
         e
     })?;
 
+    // Read salt if this is CREATE2 (for future use)
+    let _salt = if let Some(salt_offset_u32) = salt_offset_u32 {
+        Some(memory.read_bytes32(salt_offset_u32).map_err(|e| {
+            host_error!("Failed to read salt at offset {}: {}", salt_offset, e);
+            e
+        })?)
+    } else {
+        None
+    };
+
     // Get the creator address from context
     let creator_address = context.get_address();
 
-    host_info!("    🏗️  Creating contract: creator=0x{}, value=0x{}, code_len={}, data_len={}", 
-               hex::encode(&creator_address), hex::encode(&value), 
-               creation_code.len(), constructor_data.len());
-
     // Execute the contract creation using the provider
-    // Note: In a real implementation, gas would be calculated based on code size and complexity
+    // Note: All logic is implemented in MockContext::create_contract
     let gas = 1000000; // Default gas for creation
-    let result = context.create_contract(&creator_address, &value, &creation_code, &constructor_data, gas);
+    let is_create2_bool = is_create2 != 0;
+    let result = context.create_contract(&creator_address, &value, &creation_code, &constructor_data, gas, _salt, is_create2_bool);
 
     // Store the return data in the context for later retrieval
     context.set_return_data(result.return_data.clone());

@@ -31,4 +31,8 @@ path = "src/simple_token_test.rs"
 name = "base"
 path = "src/base_test.rs"
 
+[[example]]
+name = "contract"
+path = "src/contract_calls_test.rs"
+
 

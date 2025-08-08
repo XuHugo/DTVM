@@ -12,6 +12,20 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use dtvmcore_rust::evm::traits::*;
 use dtvmcore_rust::LogEvent;
+use crate::contract_executor::{ContractExecutor, ContractExecutionResult};
+
+/// Contract information stored in the registry
+#[derive(Clone, Debug)]
+pub struct ContractInfo {
+    pub name: String,
+    pub code: Vec<u8>,
+}
+
+impl ContractInfo {
+    pub fn new(name: String, code: Vec<u8>) -> Self {
+        Self { name, code }
+    }
+}
 
 
 
@@ -201,6 +215,8 @@ pub struct MockContext {
     execution_status: Rc<RefCell<Option<bool>>>,
     /// Events emitted during contract execution
     events: Rc<RefCell<Vec<LogEvent>>>,
+    /// Contract registry: address -> contract info
+    contract_registry: Rc<RefCell<HashMap<[u8; 20], ContractInfo>>>,
 }
 
 /// Builder for MockContext with fluent interface
@@ -214,6 +230,7 @@ pub struct MockContextBuilder {
     chain_id: [u8; 32],
     block_info: BlockInfo,
     tx_info: TransactionInfo,
+    contract_registry: Rc<RefCell<HashMap<[u8; 20], ContractInfo>>>,
 }
 
 impl MockContextBuilder {
@@ -244,6 +261,7 @@ impl MockContextBuilder {
             chain_id,
             block_info: BlockInfo::default(),
             tx_info: TransactionInfo::default(),
+            contract_registry: Rc::new(RefCell::new(HashMap::new())),
         }
     }
     
@@ -438,6 +456,12 @@ impl MockContextBuilder {
         self
     }
     
+    /// Set the contract registry (shared or independent)
+    pub fn with_contract_registry(mut self, registry: Rc<RefCell<HashMap<[u8; 20], ContractInfo>>>) -> Self {
+        self.contract_registry = registry;
+        self
+    }
+    
     /// Build the MockContext
     pub fn build(self) -> MockContext {
         let storage = self.storage.unwrap_or_else(|| {
@@ -460,6 +484,7 @@ impl MockContextBuilder {
             return_data: Rc::new(RefCell::new(Vec::new())),
             execution_status: Rc::new(RefCell::new(None)),
             events: Rc::new(RefCell::new(Vec::new())),
+            contract_registry: self.contract_registry,
         }
     }
 }
@@ -841,6 +866,105 @@ impl MockContext {
     pub fn clear_events(&mut self) {
         self.events.borrow_mut().clear();
     }
+
+    /// Register a contract at the given address
+    pub fn register_contract(&mut self, address: [u8; 20], name: String, code: Vec<u8>) {
+        let contract_info = ContractInfo::new(name.clone(), code);
+        self.contract_registry.borrow_mut().insert(address, contract_info);
+        println!("📝 Registered contract '{}' at address 0x{}", name, hex::encode(&address));
+    }
+
+    /// Get contract info by address
+    pub fn get_contract_info(&self, address: &[u8; 20]) -> Option<ContractInfo> {
+        self.contract_registry.borrow().get(address).cloned()
+    }
+
+    /// Get contract code by address
+    pub fn get_contract_code_by_address(&self, address: &[u8; 20]) -> Option<Vec<u8>> {
+        self.contract_registry.borrow().get(address).map(|info| info.code.clone())
+    }
+
+    /// Get contract name by address
+    pub fn get_contract_name_by_address(&self, address: &[u8; 20]) -> Option<String> {
+        self.contract_registry.borrow().get(address).map(|info| info.name.clone())
+    }
+
+    /// List all registered contracts
+    pub fn list_contracts(&self) -> Vec<([u8; 20], String)> {
+        self.contract_registry.borrow()
+            .iter()
+            .map(|(addr, info)| (*addr, info.name.clone()))
+            .collect()
+    }
+
+    /// Set the contract registry (for sharing between contexts)
+    pub fn set_contract_registry(&mut self, registry: Rc<RefCell<HashMap<[u8; 20], ContractInfo>>>) {
+        self.contract_registry = registry;
+        println!("📋 Contract registry updated");
+    }
+
+    /// Execute a contract call using ContractExecutor
+    fn execute_contract_call(&self, target_code: Vec<u8>, call_data: Vec<u8>, caller: [u8; 20], target: [u8; 20], value: [u8; 32], contract_name: &str) -> Result<ContractExecutionResult, String> {
+        // Create a new context for the contract call
+        let mut call_context = self.clone();
+        
+        // Set up the call context
+        call_context.set_caller(caller);
+        call_context.set_address(target);
+        call_context.set_call_value(value);
+        call_context.set_call_data(call_data);
+        call_context.contract_code = target_code;
+        
+        // Create a contract executor
+        let executor = ContractExecutor::new()
+            .map_err(|e| format!("Failed to create contract executor: {}", e))?;
+        
+        // Execute the contract call
+        println!("   🚀 Executing contract call to '{}'", contract_name);
+        executor.call_contract_function(contract_name, &mut call_context)
+    }
+
+    /// Execute a contract deployment using ContractExecutor
+    fn execute_contract_deployment(&self, code: Vec<u8>, data: Vec<u8>, creator: [u8; 20], new_address: [u8; 20], value: [u8; 32]) -> Result<ContractExecutionResult, String> {
+        // Create a new context for the contract deployment
+        let mut deploy_context = self.clone();
+        
+        // Set up the deployment context
+        deploy_context.set_caller(creator);
+        deploy_context.set_address(new_address);
+        deploy_context.set_call_value(value);
+        deploy_context.set_call_data(data);
+        deploy_context.contract_code = code;
+        
+        // Create a contract executor
+        let executor = ContractExecutor::new()
+            .map_err(|e| format!("Failed to create contract executor: {}", e))?;
+        
+        // Execute the contract deployment
+        println!("   🚀 Executing contract deployment");
+        match executor.deploy_contract("DynamicDeploy", &mut deploy_context) {
+            Ok(_) => {
+                // Deployment successful
+                Ok(ContractExecutionResult {
+                    success: true,
+                    return_data: deploy_context.get_return_data(),
+                    error_message: None,
+                    is_reverted: false,
+                })
+            },
+            Err(e) => {
+                // If deployment fails, return a failure result
+                Ok(ContractExecutionResult {
+                    success: false,
+                    return_data: vec![],
+                    error_message: Some(e),
+                    is_reverted: false,
+                })
+            }
+        }
+    }
+
+
 }
 
 // Implement the EvmContext trait for MockContext
@@ -1005,62 +1129,319 @@ impl ExternalCodeProvider for MockContext {
 impl ContractCallProvider for MockContext {
     fn call_contract(
         &self,
-        _target: &[u8; 20],
-        _caller: &[u8; 20],
-        _value: &[u8; 32],
-        _data: &[u8],
-        _gas: i64,
+        target: &[u8; 20],
+        caller: &[u8; 20],
+        value: &[u8; 32],
+        data: &[u8],
+        gas: i64,
     ) -> ContractCallResult {
-        // Return mock call result
-        ContractCallResult::success(vec![0x01, 0x02, 0x03], 1000)
+        println!("📞 MockContext::call_contract called:");
+        println!("   Target: 0x{}", hex::encode(target));
+        println!("   Caller: 0x{}", hex::encode(caller));
+        println!("   Value: 0x{}", hex::encode(value));
+        println!("   Data length: {} bytes", data.len());
+        println!("   Gas: {}", gas);
+
+        // Get target contract code from registry
+        let (target_code, contract_name) = match self.get_contract_info(target) {
+            Some(info) => {
+                println!("   📋 Found target contract: '{}', code length: {} bytes", info.name, info.code.len());
+                (info.code, info.name)
+            },
+            None => {
+                println!("   ⚠️ Target contract not found in registry, using current contract code as fallback");
+                let current_code = self.get_contract_code();
+                println!("   📋 Using current contract code: {} bytes", current_code.len());
+                (current_code.to_vec(), "Unknown".to_string())
+            }
+        };
+        
+        // Execute the contract call
+        match self.execute_contract_call(target_code, data.to_vec(), *caller, *target, *value, &contract_name) {
+            Ok(result) => {
+                let gas_used = gas.min(50000); // Mock gas consumption
+                
+                if result.success && !result.is_reverted {
+                    println!("   ✅ Call succeeded, return data: {} bytes", result.return_data.len());
+                    ContractCallResult::success(result.return_data, gas_used)
+                } else {
+                    println!("   ❌ Call failed or reverted: {:?}", result.error_message);
+                    ContractCallResult::failure(result.return_data, gas_used)
+                }
+            },
+            Err(e) => {
+                println!("   ❌ Call execution error: {}", e);
+                ContractCallResult::failure(vec![], gas.min(21000))
+            }
+        }
     }
     
     fn call_code(
         &self,
-        _target: &[u8; 20],
-        _caller: &[u8; 20],
-        _value: &[u8; 32],
-        _data: &[u8],
-        _gas: i64,
+        target: &[u8; 20],
+        caller: &[u8; 20],
+        value: &[u8; 32],
+        data: &[u8],
+        gas: i64,
     ) -> ContractCallResult {
-        // Return mock call result
-        ContractCallResult::success(vec![0x04, 0x05, 0x06], 1000)
+        println!("📞 MockContext::call_code called:");
+        println!("   Target: 0x{}", hex::encode(target));
+        println!("   Caller: 0x{}", hex::encode(caller));
+        println!("   Value: 0x{}", hex::encode(value));
+        println!("   Data length: {} bytes", data.len());
+        println!("   Gas: {}", gas);
+
+        // CALLCODE: Execute target's code but in current contract's context
+        // Use target's code but keep current address and storage
+        let (target_code, contract_name) = match self.get_contract_info(target) {
+            Some(info) => {
+                println!("   📋 Found target contract: '{}'", info.name);
+                (info.code, info.name)
+            },
+            None => {
+                println!("   ⚠️ Target contract not found in registry, using current contract code as fallback");
+                (self.get_contract_code().to_vec(), "Unknown".to_string())
+            }
+        };
+        let current_address = self.get_address(); // Keep current address
+        
+        match self.execute_contract_call(target_code, data.to_vec(), *caller, *current_address, *value, &contract_name) {
+            Ok(result) => {
+                let gas_used = gas.min(50000);
+                
+                if result.success && !result.is_reverted {
+                    println!("   ✅ CALLCODE succeeded, return data: {} bytes", result.return_data.len());
+                    ContractCallResult::success(result.return_data, gas_used)
+                } else {
+                    println!("   ❌ CALLCODE failed or reverted: {:?}", result.error_message);
+                    ContractCallResult::failure(result.return_data, gas_used)
+                }
+            },
+            Err(e) => {
+                println!("   ❌ CALLCODE execution error: {}", e);
+                ContractCallResult::failure(vec![], gas.min(21000))
+            }
+        }
     }
     
     fn call_delegate(
         &self,
-        _target: &[u8; 20],
-        _caller: &[u8; 20],
-        _data: &[u8],
-        _gas: i64,
+        target: &[u8; 20],
+        caller: &[u8; 20],
+        data: &[u8],
+        gas: i64,
     ) -> ContractCallResult {
-        // Return mock call result
-        ContractCallResult::success(vec![0x07, 0x08, 0x09], 1000)
+        println!("📞 MockContext::call_delegate called:");
+        println!("   Target: 0x{}", hex::encode(target));
+        println!("   Caller: 0x{}", hex::encode(caller));
+        println!("   Data length: {} bytes", data.len());
+        println!("   Gas: {}", gas);
+
+        // DELEGATECALL: Execute target's code in current contract's full context
+        // Use target's code but keep current address, caller, and value
+        let (target_code, contract_name) = match self.get_contract_info(target) {
+            Some(info) => {
+                println!("   📋 Found target contract: '{}'", info.name);
+                (info.code, info.name)
+            },
+            None => {
+                println!("   ⚠️ Target contract not found in registry, using current contract code as fallback");
+                (self.get_contract_code().to_vec(), "Unknown".to_string())
+            }
+        };
+        let current_address = self.get_address(); // Keep current address
+        let current_value = self.get_call_value(); // Keep current value
+        
+        match self.execute_contract_call(target_code, data.to_vec(), *caller, *current_address, *current_value, &contract_name) {
+            Ok(result) => {
+                let gas_used = gas.min(50000);
+                
+                if result.success && !result.is_reverted {
+                    println!("   ✅ DELEGATECALL succeeded, return data: {} bytes", result.return_data.len());
+                    ContractCallResult::success(result.return_data, gas_used)
+                } else {
+                    println!("   ❌ DELEGATECALL failed or reverted: {:?}", result.error_message);
+                    ContractCallResult::failure(result.return_data, gas_used)
+                }
+            },
+            Err(e) => {
+                println!("   ❌ DELEGATECALL execution error: {}", e);
+                ContractCallResult::failure(vec![], gas.min(21000))
+            }
+        }
     }
     
     fn call_static(
         &self,
-        _target: &[u8; 20],
-        _caller: &[u8; 20],
-        _data: &[u8],
-        _gas: i64,
+        target: &[u8; 20],
+        caller: &[u8; 20],
+        data: &[u8],
+        gas: i64,
     ) -> ContractCallResult {
-        // Return mock call result
-        ContractCallResult::success(vec![0x0a, 0x0b, 0x0c], 1000)
+        println!("📞 MockContext::call_static called:");
+        println!("   Target: 0x{}", hex::encode(target));
+        println!("   Caller: 0x{}", hex::encode(caller));
+        println!("   Data length: {} bytes", data.len());
+        println!("   Gas: {}", gas);
+
+        // STATICCALL: Execute target's code but prevent state changes
+        let (target_code, contract_name) = match self.get_contract_info(target) {
+            Some(info) => {
+                println!("   📋 Found target contract: '{}'", info.name);
+                (info.code, info.name)
+            },
+            None => {
+                println!("   ⚠️ Target contract not found in registry, using current contract code as fallback");
+                (self.get_contract_code().to_vec(), "Unknown".to_string())
+            }
+        };
+        let zero_value = [0u8; 32]; // No value transfer in static calls
+        
+        match self.execute_contract_call(target_code, data.to_vec(), *caller, *target, zero_value, &contract_name) {
+            Ok(result) => {
+                let gas_used = gas.min(50000);
+                
+                if result.success && !result.is_reverted {
+                    println!("   ✅ STATICCALL succeeded, return data: {} bytes", result.return_data.len());
+                    ContractCallResult::success(result.return_data, gas_used)
+                } else {
+                    println!("   ❌ STATICCALL failed or reverted: {:?}", result.error_message);
+                    ContractCallResult::failure(result.return_data, gas_used)
+                }
+            },
+            Err(e) => {
+                println!("   ❌ STATICCALL execution error: {}", e);
+                ContractCallResult::failure(vec![], gas.min(21000))
+            }
+        }
     }
     
     fn create_contract(
         &self,
-        _creator: &[u8; 20],
-        _value: &[u8; 32],
-        _code: &[u8],
-        _data: &[u8],
-        _gas: i64,
+        creator: &[u8; 20],
+        value: &[u8; 32],
+        code: &[u8],
+        data: &[u8],
+        gas: i64,
+        salt: Option<[u8; 32]>,
+        is_create2: bool,
     ) -> ContractCreateResult {
-        // Return mock create result
-        let mut address = [0u8; 20];
-        address[0] = 0xff;
-        ContractCreateResult::success(address, vec![0x0d, 0x0e, 0x0f], 1000)
+        if is_create2 {
+            println!("🏗️ MockContext::create_contract called (CREATE2):");
+            println!("   Creator: 0x{}", hex::encode(creator));
+            println!("   Value: 0x{}", hex::encode(value));
+            println!("   Code length: {} bytes", code.len());
+            println!("   Data length: {} bytes", data.len());
+            println!("   Salt: 0x{}", hex::encode(&salt.unwrap_or([0u8; 32])));
+            println!("   Gas: {}", gas);
+        } else {
+            println!("🏗️ MockContext::create_contract called (CREATE):");
+            println!("   Creator: 0x{}", hex::encode(creator));
+            println!("   Value: 0x{}", hex::encode(value));
+            println!("   Code length: {} bytes", code.len());
+            println!("   Data length: {} bytes", data.len());
+            println!("   Gas: {}", gas);
+        }
+
+        // Generate a deterministic contract address
+        let mut new_address = [0u8; 20];
+        
+        if is_create2 {
+            // CREATE2 address generation: keccak256(0xff ++ creator ++ salt ++ keccak256(code))
+            new_address[0] = 0xc2; // CREATE2 prefix
+            new_address[1] = creator[19]; // Use last byte of creator
+            if let Some(salt_bytes) = salt {
+                new_address[2] = salt_bytes[31]; // Use last byte of salt
+                new_address[3] = salt_bytes[30]; // Use second-to-last byte of salt
+            }
+            new_address[4] = (code.len() % 256) as u8; // Code length influence
+            
+            // Fill remaining bytes with a pattern based on salt and code
+            for i in 5..20 {
+                let salt_influence = if let Some(s) = salt { s[i % 32] } else { 0 };
+                new_address[i] = ((i * 19 + salt_influence as usize + code.len()) % 256) as u8;
+            }
+        } else {
+            // CREATE address generation: keccak256(creator ++ nonce)
+            new_address[0] = 0xc0; // CREATE prefix
+            new_address[1] = creator[19]; // Use last byte of creator
+            new_address[2] = (code.len() % 256) as u8; // Code length influence
+            new_address[3] = (data.len() % 256) as u8; // Data length influence
+            
+            // Fill remaining bytes with a pattern
+            for i in 4..20 {
+                new_address[i] = ((i * 17 + code.len() + data.len()) % 256) as u8;
+            }
+        }
+
+        println!("   Generated contract address: 0x{}", hex::encode(&new_address));
+
+        // Simulate gas consumption based on code size
+        let gas_used = 21000 + (code.len() as i64 * 200) + (data.len() as i64 * 68);
+        let remaining_gas = gas - gas_used;
+
+        if remaining_gas < 0 {
+            println!("   ❌ Out of gas: required={}, available={}", gas_used, gas);
+            return ContractCreateResult::failure(vec![], gas);
+        }
+
+        // Check for simple failure conditions
+        if code.is_empty() {
+            println!("   ❌ Contract creation failed: empty code");
+            return ContractCreateResult::failure(vec![], gas_used);
+        }
+
+        // Check value transfer (simplified)
+        let value_amount = u64::from_be_bytes([
+            value[24], value[25], value[26], value[27],
+            value[28], value[29], value[30], value[31]
+        ]);
+        
+        if value_amount > 0 {
+            println!("   💰 Value transfer: {} wei", value_amount);
+            // In a real implementation, we would check balance and transfer value
+        }
+
+        // Execute constructor if data is provided
+        let return_data = if !data.is_empty() {
+            println!("   🔧 Executing constructor with {} bytes of data", data.len());
+            
+            // Execute the constructor using ContractExecutor
+            match self.execute_contract_deployment(code.to_vec(), data.to_vec(), *creator, new_address, *value) {
+                Ok(result) => {
+                    if result.success {
+                        println!("   ✅ Constructor executed successfully");
+                        result.return_data
+                    } else {
+                        println!("   ❌ Constructor execution failed: {:?}", result.error_message);
+                        return ContractCreateResult::failure(result.return_data, gas_used);
+                    }
+                },
+                Err(e) => {
+                    println!("   ❌ Constructor execution error: {}", e);
+                    return ContractCreateResult::failure(vec![], gas_used);
+                }
+            }
+        } else {
+            vec![]
+        };
+
+        // Register the newly created contract in the registry
+        let contract_name = if is_create2 {
+            format!("CREATE2_Contract_0x{}", hex::encode(&new_address[16..20]))
+        } else {
+            format!("CREATE_Contract_0x{}", hex::encode(&new_address[16..20]))
+        };
+        
+        // Clone self to get mutable access for registration
+        let mut mutable_self = self.clone();
+        mutable_self.register_contract(new_address, contract_name, code.to_vec());
+
+        println!("   ✅ Contract creation successful");
+        println!("   📍 New contract address: 0x{}", hex::encode(&new_address));
+        println!("   ⛽ Gas used: {}", gas_used);
+
+        ContractCreateResult::success(new_address, return_data, gas_used)
     }
 }
 
