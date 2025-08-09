@@ -258,6 +258,15 @@ pub trait EvmContext {
     
     /// Load a 32-byte value from contract storage
     fn get_storage_bytes32(&self, key: &str) -> [u8; 32];
+    
+    /// Self-destruct the current contract and transfer balance to recipient
+    /// 
+    /// Parameters:
+    /// - recipient: The address to receive the contract's balance
+    /// 
+    /// Returns:
+    /// - The amount of balance transferred (in wei)
+    fn self_destruct(&self, recipient: &[u8; 20]) -> [u8; 32];
 }
 
 /// Trait for providing account balance information
@@ -358,3 +367,4 @@ pub trait StorageProvider {
     /// Load a value from contract storage
     fn storage_load(&self, key: &[u8; 32]) -> [u8; 32];
 }
+

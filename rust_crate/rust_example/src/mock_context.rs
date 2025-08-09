@@ -1084,6 +1084,31 @@ impl EvmContext for MockContext {
     fn get_storage_bytes32(&self, key: &str) -> [u8; 32] {
         self.get_storage_bytes32(key)
     }
+    
+    /// Self-destruct the current contract and transfer balance to recipient
+    fn self_destruct(&self, recipient: &[u8; 20]) -> [u8; 32] {
+        println!("💥 MockContext::self_destruct called:");
+        println!("   Recipient: 0x{}", hex::encode(recipient));
+        
+        // Get the current contract's balance using AccountBalanceProvider
+        let contract_address = self.get_address();
+        let contract_balance = self.get_account_balance(contract_address);
+        let balance_amount = u64::from_be_bytes([
+            contract_balance[24], contract_balance[25], contract_balance[26], contract_balance[27],
+            contract_balance[28], contract_balance[29], contract_balance[30], contract_balance[31]
+        ]);
+        
+        println!("   💰 Transferring {} wei to recipient", balance_amount);
+        
+        // In a real implementation, this would:
+        // 1. Transfer the balance to the recipient
+        // 2. Mark the contract as destructed
+        // 3. Clear the contract's storage
+        // 4. Remove the contract code
+        
+        // For now, we just return the transferred amount
+        contract_balance
+    }
 }
 
 // Implement provider traits for MockContext
@@ -1125,6 +1150,8 @@ impl ExternalCodeProvider for MockContext {
         Some(vec![0x60, 0x00, 0x60, 0x00, 0xf3]) // Simple mock bytecode
     }
 }
+
+
 
 impl ContractCallProvider for MockContext {
     fn call_contract(

@@ -604,6 +604,8 @@ fn main() {
         let selector = calculate_selector("testSelfDestruct(address)");
         set_function_call_data_with_address(&mut context, &selector, &target_address);
         
+        println!("   ⚠️ About to call testSelfDestruct - this should terminate execution");
+        
         match executor.call_contract_function("AdvancedHostFunctions.wasm", &mut context) {
             Ok(_) => {
                 println!("❌ testSelfDestruct should have terminated but succeeded");
@@ -619,6 +621,7 @@ fn main() {
             Err(err) => {
                 println!("✓ testSelfDestruct correctly terminated as expected: {}", err);
                 println!("   ℹ️ This is the expected behavior for the SELFDESTRUCT opcode");
+                println!("   💥 Contract execution terminated due to self-destruct");
                 
                 process_events(&context, "selfDestruct");
                 clear_events(&mut context);

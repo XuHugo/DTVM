@@ -141,6 +141,7 @@ where
 {
     host_info!("self_destruct called: addr_offset={}", addr_offset);
 
+    let context = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate the address parameter
@@ -152,12 +153,16 @@ where
         e
     })?;
 
-    host_warn!("self_destruct: contract self-destructing, sending balance to address {:02x?}", &recipient_address[0..4]);
+    host_info!("    💥 Self-destructing contract, recipient: 0x{}", hex::encode(&recipient_address));
     
-    // In a real implementation, this would:
-    // 1. Transfer the contract's balance to the recipient
-    // 2. Mark the contract for deletion
-    // 3. Terminate execution
+    // Perform the self-destruct operation - let the context handle the details
+    let transferred_balance = context.self_destruct(&recipient_address);
+    let transferred_amount = u64::from_be_bytes([
+        transferred_balance[24], transferred_balance[25], transferred_balance[26], transferred_balance[27],
+        transferred_balance[28], transferred_balance[29], transferred_balance[30], transferred_balance[31]
+    ]);
+    
+    host_info!("    ✅ Balance transferred: {} wei to 0x{}", transferred_amount, hex::encode(&recipient_address));
     
     // Self-destruct - exit with code 3 (self-destruct)
     host_warn!("self_destruct: contract self-destructed, exiting with code 3");
