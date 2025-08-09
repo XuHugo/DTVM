@@ -35,4 +35,7 @@ path = "src/base_test.rs"
 name = "contract"
 path = "src/contract_calls_test.rs"
 
+[[example]]
+name = "host"
+path = "src/advanced_host_test.rs"
 
