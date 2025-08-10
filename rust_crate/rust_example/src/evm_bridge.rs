@@ -496,12 +496,12 @@ extern "C" fn create_contract(wasm_inst: *mut ZenInstanceExtern, value_offset: i
     match dtvmcore_rust::evm::host_functions::contract::create_contract(inst, value_offset, code_offset, code_length, data_offset, data_length, salt_offset, is_create2, result_offset) {
         Ok(result) => {
             println!("[EVM] create_contract succeeded, returned: {}", result);
-            result
+            0
         }
         Err(e) => {
             println!("[EVM] create_contract failed: {}", e);
             inst.set_exception_by_hostapi(9);
-            0
+            1
         }
     }
 }

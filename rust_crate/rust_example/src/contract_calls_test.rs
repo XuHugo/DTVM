@@ -587,7 +587,7 @@ fn main() {
             .build();
         // Load counter WASM module
         println!("=== Loading Counter WASM Module ===");
-        let counter_wasm_bytes = fs::read("../example/counter0.wasm").expect("Failed to load counter.wasm");
+        let counter_wasm_bytes = fs::read("../example/SimpleTarget.wasm").expect("Failed to load counter.wasm");
         println!("✓ Counter WASM file loaded: {} bytes", counter_wasm_bytes.len());
 
         // Use SimpleTarget bytecode for creation

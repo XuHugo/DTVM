@@ -127,3 +127,28 @@ debug-assertions = false
 overflow-checks = false
 lto = true
 panic = 'abort'
+
+# Binary targets for testing
+[[bin]]
+name = "base_test"
+path = "rust_example/src/base_test.rs"
+
+[[bin]]
+name = "simple_token_test"
+path = "rust_example/src/simple_token_test.rs"
+
+[[bin]]
+name = "contract_calls_test"
+path = "rust_example/src/contract_calls_test.rs"
+
+[[bin]]
+name = "advanced_host_test"
+path = "rust_example/src/advanced_host_test.rs"
+
+[[bin]]
+name = "contract_factory_test"
+path = "rust_example/src/contract_factory_test.rs"
+
+[[bin]]
+name = "counter_test"
+path = "rust_example/src/counter_test.rs"

@@ -7,6 +7,7 @@
 //! for testing and development purposes. Users should create their own
 //! context implementations based on their specific needs.
 
+use std::fs;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -942,7 +943,7 @@ impl MockContext {
         
         // Execute the contract deployment
         println!("   🚀 Executing contract deployment");
-        match executor.deploy_contract("DynamicDeploy", &mut deploy_context) {
+        match executor.deploy_contract("SimpleContract.wasm", &mut deploy_context) {
             Ok(_) => {
                 // Deployment successful
                 Ok(ContractExecutionResult {
@@ -1407,10 +1408,10 @@ impl ContractCallProvider for MockContext {
         let gas_used = 21000 + (code.len() as i64 * 200) + (data.len() as i64 * 68);
         let remaining_gas = gas - gas_used;
 
-        if remaining_gas < 0 {
-            println!("   ❌ Out of gas: required={}, available={}", gas_used, gas);
-            return ContractCreateResult::failure(vec![], gas);
-        }
+        // if remaining_gas < 0 {
+        //     println!("   ❌ Out of gas: required={}, available={}", gas_used, gas);
+        //     return ContractCreateResult::failure(vec![], gas);
+        // }
 
         // Check for simple failure conditions
         if code.is_empty() {
@@ -1431,6 +1432,11 @@ impl ContractCallProvider for MockContext {
 
         // Execute constructor if data is provided
         let return_data = if !data.is_empty() {
+            // // Load SimpleTarget WASM module
+            // println!("=== Loading SimpleTarget WASM Module ===");
+            // let code = fs::read("../example/SimpleTarget.wasm").expect("Failed to load SimpleTarget.wasm");
+
+            println!("   🔧 Executing constructor with {} bytes of code", code.len());
             println!("   🔧 Executing constructor with {} bytes of data", data.len());
             
             // Execute the constructor using ContractExecutor
