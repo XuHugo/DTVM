@@ -38,7 +38,3 @@ path = "src/contract_calls_test.rs"
 [[example]]
 name = "host"
 path = "src/advanced_host_test.rs"
-
-[[example]]
-name = "new"
-path = "src/contract_factory_test.rs"

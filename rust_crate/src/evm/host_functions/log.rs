@@ -236,6 +236,7 @@ where
 }
 
 /// Validate log event parameters
+#[allow(dead_code)]
 fn validate_log_params(
     data_offset: i32,
     length: i32,

@@ -145,28 +145,4 @@ impl ContractExecutor {
             }
         }
     }
-    
-    /// 打印事件详情
-    pub fn print_events(&self, context: &MockContext) {
-        let events = context.get_events();
-        println!("\n--- 事件检查 ---");
-        println!("✓ 总共发出的事件数: {}", events.len());
-        
-        if events.len() > 0 {
-            println!("   📋 事件详情:");
-            for (i, event) in events.iter().enumerate() {
-                println!("   事件 {}: 合约地址=0x{}, 主题数={}, 数据长度={}", 
-                         i + 1, 
-                         hex::encode(&event.contract_address), 
-                         event.topics.len(), 
-                         event.data.len());
-            }
-        }
-    }
-}
-
-/// 辅助函数：设置函数调用数据
-pub fn set_function_call_data(context: &mut MockContext, selector: &[u8; 4]) {
-    context.set_call_data(selector.to_vec());
-    println!("   📋 设置函数选择器: 0x{}", hex::encode(selector));
 }

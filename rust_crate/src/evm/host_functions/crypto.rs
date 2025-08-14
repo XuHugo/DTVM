@@ -198,6 +198,7 @@ where
 }
 
 /// Helper function to validate hash function parameters
+#[allow(dead_code)]
 fn validate_hash_params(
     input_offset: i32,
     input_length: i32,

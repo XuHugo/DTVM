@@ -19,7 +19,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use dtvmcore_rust::evm::EvmContext;
 mod mock_context;
-use mock_context::{MockContext, MockContextBuilder};
+use mock_context::MockContext;
 
 mod contract_executor;
 use contract_executor::ContractExecutor;
@@ -194,7 +194,8 @@ fn main() {
     println!("testCall(address,bytes): 0x{}", hex::encode(calculate_selector("testCall(address,bytes)")));
     println!("testStaticCall(address,bytes): 0x{}", hex::encode(calculate_selector("testStaticCall(address,bytes)")));
     println!("testDelegateCall(address,bytes): 0x{}", hex::encode(calculate_selector("testDelegateCall(address,bytes)")));
-    println!("testCreate(bytes): 0x{}", hex::encode(calculate_selector("testCreate(bytes)")));
+    println!("testCreate(uint256): 0x{}", hex::encode(calculate_selector("testCreate(uint256)")));
+    println!("testCreate2(uint256,bytes32): 0x{}", hex::encode(calculate_selector("testCreate2(uint256,bytes32)")));
     
     // Calculate SimpleTarget function selectors
     println!("=== SimpleTarget Function Selectors ===");
@@ -226,7 +227,7 @@ fn main() {
     // Test 1: Deploy SimpleTarget contract
     println!("------------------ Test 1: Deploy SimpleTarget Contract ------------------");
     {
-        let mut target_context = MockContextBuilder::new()
+        let mut target_context = MockContext::builder()
             .with_storage(shared_storage.clone())
             .with_contract_registry(shared_registry.clone())
             .with_code(target_wasm_bytes.clone())
@@ -256,7 +257,7 @@ fn main() {
     // Test 2: Deploy ContractCalls contract
     println!("------------------ Test 2: Deploy ContractCalls Contract ------------------");
     {
-        let mut calls_context = MockContextBuilder::new()
+        let mut calls_context = MockContext::builder()
             .with_storage(shared_storage.clone())
             .with_contract_registry(shared_registry.clone())
             .with_code(calls_wasm_bytes.clone())
@@ -286,7 +287,7 @@ fn main() {
     // Test 3: Test direct function call on SimpleTarget
     println!("------------------ Test 3: Direct Call to SimpleTarget ------------------");
     {
-        let mut target_context = MockContextBuilder::new()
+        let mut target_context = MockContext::builder()
             .with_storage(shared_storage.clone())
             .with_contract_registry(shared_registry.clone())
             .with_code(target_wasm_bytes.clone())
@@ -325,7 +326,7 @@ fn main() {
     // Test 4: Test CALL operation through ContractCalls
     println!("------------------ Test 4: Test CALL Operation ------------------");
     {
-        let mut calls_context = MockContextBuilder::new()
+        let mut calls_context = MockContext::builder()
             .with_storage(shared_storage.clone())
             .with_contract_registry(shared_registry.clone())
             .with_code(calls_wasm_bytes.clone())
@@ -412,7 +413,7 @@ fn main() {
     // Test 5: Test STATICCALL operation
     println!("------------------ Test 5: Test STATICCALL Operation ------------------");
     {
-        let mut calls_context = MockContextBuilder::new()
+        let mut calls_context = MockContext::builder()
             .with_storage(shared_storage.clone())
             .with_contract_registry(shared_registry.clone())
             .with_code(calls_wasm_bytes.clone())
@@ -492,7 +493,7 @@ fn main() {
     // Test 6: Test DELEGATECALL operation
     println!("------------------ Test 6: Test DELEGATECALL Operation ------------------");
     {
-        let mut calls_context = MockContextBuilder::new()
+        let mut calls_context = MockContext::builder()
             .with_storage(shared_storage.clone())
             .with_contract_registry(shared_registry.clone())
             .with_code(calls_wasm_bytes.clone())
@@ -578,41 +579,17 @@ fn main() {
     // Test 7: Test CREATE operation
     println!("------------------ Test 7: Test CREATE Operation ------------------");
     {
-        let mut calls_context = MockContextBuilder::new()
+        let mut calls_context = MockContext::builder()
             .with_storage(shared_storage.clone())
             .with_contract_registry(shared_registry.clone())
             .with_code(calls_wasm_bytes.clone())
             .with_caller(owner_address)
             .with_address(calls_contract_address)
             .build();
-        // Load counter WASM module
-        println!("=== Loading Counter WASM Module ===");
-        let counter_wasm_bytes = fs::read("../example/SimpleTarget.wasm").expect("Failed to load counter.wasm");
-        println!("✓ Counter WASM file loaded: {} bytes", counter_wasm_bytes.len());
 
-        // Use SimpleTarget bytecode for creation
-        let creation_bytecode = counter_wasm_bytes.clone();
-        
-        // Encode the full call: testCreate(bytes bytecode)
-        let mut full_call_data = calculate_selector("testCreate(bytes)").to_vec();
-        
-        // Add offset to bytes data (32 bytes)
-        let mut offset_bytes = [0u8; 32];
-        offset_bytes[24..32].copy_from_slice(&32u64.to_be_bytes());
-        full_call_data.extend_from_slice(&offset_bytes);
-        
-        // Add bytes length (32 bytes)
-        let mut length_bytes = [0u8; 32];
-        length_bytes[24..32].copy_from_slice(&(creation_bytecode.len() as u64).to_be_bytes());
-        full_call_data.extend_from_slice(&length_bytes);
-        
-        // Add bytes data (padded to multiple of 32)
-        full_call_data.extend_from_slice(&creation_bytecode);
-        let padding = (32 - (creation_bytecode.len() % 32)) % 32;
-        full_call_data.extend_from_slice(&vec![0u8; padding]);
-        
-        calls_context.set_call_data(full_call_data);
-        println!("   📋 Set call data for testCreate operation");
+        // Prepare call data for testCreate(uint256 _value)
+        let selector = calculate_selector("testCreate(uint256)");
+        set_function_call_data_with_uint256(&mut calls_context, &selector, 123);
         
         match executor.call_contract_function("ContractCalls.wasm", &mut calls_context) {
             Ok(_) => {
@@ -636,6 +613,10 @@ fn main() {
                 // Process events
                 let events = calls_context.get_events();
                 println!("   📋 Events: {} emitted", events.len());
+                for (i, event) in events.iter().enumerate() {
+                    println!("   📋 Event {}: {} topics, {} bytes data", 
+                             i + 1, event.topics.len(), event.data.len());
+                }
                 
                 clear_events(&mut calls_context);
             },
@@ -643,10 +624,10 @@ fn main() {
         }
     }
 
-    // Test 8: Test Contract Registry System
-    println!("------------------ Test 8: Test Contract Registry System ------------------");
-    if false {
-        let mut registry_context = MockContextBuilder::new()
+    // Test 8: Test CREATE2 operation
+    println!("------------------ Test 8: Test CREATE2 Operation ------------------");
+    {
+        let mut calls_context = MockContext::builder()
             .with_storage(shared_storage.clone())
             .with_contract_registry(shared_registry.clone())
             .with_code(calls_wasm_bytes.clone())
@@ -654,137 +635,54 @@ fn main() {
             .with_address(calls_contract_address)
             .build();
 
-        // Register some additional test contracts
-        let test_address_1 = create_test_address(100);
-        let test_address_2 = create_test_address(101);
+        // Prepare call data for testCreate2(uint256 _value, bytes32 salt)
+        let mut full_call_data = calculate_selector("testCreate2(uint256,bytes32)").to_vec();
         
-        registry_context.register_contract(test_address_1, "TestContract1".to_string(), vec![0x01, 0x02, 0x03]);
-        registry_context.register_contract(test_address_2, "TestContract2".to_string(), vec![0x04, 0x05, 0x06]);
-        
-        // Test contract lookup
-        println!("   🔍 Testing contract registry lookup:");
-        
-        // Test pre-registered contracts
-        if let Some(info) = registry_context.get_contract_info(&target_contract_address) {
-            println!("   ✓ Found pre-registered contract '{}' at 0x{}", info.name, hex::encode(&target_contract_address));
-            println!("     Code length: {} bytes", info.code.len());
-        } else {
-            println!("   ❌ Failed to find pre-registered SimpleTarget contract");
-        }
-        
-        if let Some(info) = registry_context.get_contract_info(&calls_contract_address) {
-            println!("   ✓ Found pre-registered contract '{}' at 0x{}", info.name, hex::encode(&calls_contract_address));
-            println!("     Code length: {} bytes", info.code.len());
-        } else {
-            println!("   ❌ Failed to find pre-registered ContractCalls contract");
-        }
-        
-        // Test newly registered contracts
-        if let Some(info) = registry_context.get_contract_info(&test_address_1) {
-            println!("   ✓ Found test contract '{}' at 0x{}", info.name, hex::encode(&test_address_1));
-            println!("     Code length: {} bytes", info.code.len());
-        } else {
-            println!("   ❌ Failed to find test contract 1");
-        }
-        
-        // List all registered contracts
-        let contracts = registry_context.list_contracts();
-        println!("   📋 Total registered contracts: {}", contracts.len());
-        for (addr, name) in contracts {
-            println!("     - '{}' at 0x{}", name, hex::encode(&addr));
-        }
-        
-        // Test contract call using registry
-        println!("   🔗 Testing contract call using registry:");
-        
-        // Create call data for setValue(200)
-        let mut call_data = calculate_selector("setValue(uint256)").to_vec();
+        // Add _value parameter (32 bytes)
         let mut value_bytes = [0u8; 32];
-        value_bytes[24..32].copy_from_slice(&200u64.to_be_bytes());
-        call_data.extend_from_slice(&value_bytes);
+        value_bytes[24..32].copy_from_slice(&456u64.to_be_bytes());
+        full_call_data.extend_from_slice(&value_bytes);
         
-        // Test the call_contract function which should use the registry
-        use dtvmcore_rust::evm::traits::ContractCallProvider;
-        let result = registry_context.call_contract(
-            &target_contract_address,
-            &owner_address,
-            &[0u8; 32], // zero value
-            &call_data,
-            100000 // gas
-        );
+        // Add salt parameter (32 bytes)
+        let salt = [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+                   0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+                   0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
+                   0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        full_call_data.extend_from_slice(&salt);
         
-        if result.success {
-            println!("   ✅ Contract call via registry succeeded");
-            println!("     Return data: {} bytes", result.return_data.len());
-            println!("     Gas used: {}", result.gas_used);
-        } else {
-            println!("   ❌ Contract call via registry failed");
-        }
+        calls_context.set_call_data(full_call_data);
+        println!("   📋 Set call data for testCreate2 operation with value: 456 and salt: 0x{}", hex::encode(&salt));
         
-        // Test cross-contract call: ContractCalls -> SimpleTarget
-        println!("   🔗 Testing cross-contract call via registry:");
-        
-        // Prepare call data for testCall(address target, bytes data) from ContractCalls to SimpleTarget
-        let target_call_data = {
-            let mut data = calculate_selector("setValue(uint256)").to_vec();
-            let mut value_bytes = [0u8; 32];
-            value_bytes[24..32].copy_from_slice(&300u64.to_be_bytes());
-            data.extend_from_slice(&value_bytes);
-            data
-        };
-        
-        // Encode the full call: testCall(target_address, target_call_data)
-        let mut full_call_data = calculate_selector("testCall(address,bytes)").to_vec();
-        
-        // Add target address (32 bytes)
-        full_call_data.extend_from_slice(&[0u8; 12]);
-        full_call_data.extend_from_slice(&target_contract_address);
-        
-        // Add offset to bytes data (32 bytes)
-        let mut offset_bytes = [0u8; 32];
-        offset_bytes[24..32].copy_from_slice(&64u64.to_be_bytes());
-        full_call_data.extend_from_slice(&offset_bytes);
-        
-        // Add bytes length (32 bytes)
-        let mut length_bytes = [0u8; 32];
-        length_bytes[24..32].copy_from_slice(&(target_call_data.len() as u64).to_be_bytes());
-        full_call_data.extend_from_slice(&length_bytes);
-        
-        // Add bytes data (padded to multiple of 32)
-        full_call_data.extend_from_slice(&target_call_data);
-        let padding = (32 - (target_call_data.len() % 32)) % 32;
-        full_call_data.extend_from_slice(&vec![0u8; padding]);
-        
-        registry_context.set_call_data(full_call_data);
-        
-        match executor.call_contract_function("ContractCalls.wasm", &mut registry_context) {
+        match executor.call_contract_function("ContractCalls.wasm", &mut calls_context) {
             Ok(_) => {
-                println!("   ✅ Cross-contract call executed successfully");
+                println!("✓ CREATE2 operation executed successfully");
                 
-                if registry_context.has_return_data() {
-                    let return_data = registry_context.get_return_data();
-                    println!("     Return data: 0x{}", registry_context.get_return_data_hex());
+                // Process return data
+                if calls_context.has_return_data() {
+                    let return_data = calls_context.get_return_data();
+                    println!("   ✅ Raw return data: 0x{}", calls_context.get_return_data_hex());
                     
-                    // Decode (bool success, bytes returnData)
-                    match decode_call_result(&return_data) {
-                        Ok((success, bytes_data)) => {
-                            println!("     Call success: {}", success);
-                            if !bytes_data.is_empty() {
-                                println!("     Return data: 0x{}", hex::encode(&bytes_data));
-                                
-                                if bytes_data.len() >= 32 {
-                                    match decode_uint256(&bytes_data) {
-                                        Ok(value) => println!("     Decoded value: {}", value),
-                                        Err(_) => {},
-                                    }
-                                }
-                            }
-                        },
-                        Err(err) => println!("     Failed to decode result: {}", err),
+                    if return_data.len() >= 32 {
+                        match decode_address(&return_data) {
+                            Ok(new_address) => {
+                                println!("   🏗️ New contract address (CREATE2): 0x{}", hex::encode(&new_address));
+                            },
+                            Err(err) => println!("   ⚠️ Failed to decode new address: {}", err),
+                        }
                     }
                 }
+                
+                // Process events
+                let events = calls_context.get_events();
+                println!("   📋 Events: {} emitted", events.len());
+                for (i, event) in events.iter().enumerate() {
+                    println!("   📋 Event {}: {} topics, {} bytes data", 
+                             i + 1, event.topics.len(), event.data.len());
+                }
+                
+                clear_events(&mut calls_context);
             },
-            Err(err) => println!("   ❌ Cross-contract call error: {}", err),
+            Err(err) => println!("❌ CREATE2 operation error: {}", err),
         }
     }
 
@@ -795,6 +693,7 @@ fn main() {
     println!("   🔍 STATICCALL operation tested");
     println!("   🔄 DELEGATECALL operation tested");
     println!("   🏗️ CREATE operation tested");
+    println!("   🏗️ CREATE2 operation tested");
     println!("   📋 Contract registry system tested");
     
     println!("

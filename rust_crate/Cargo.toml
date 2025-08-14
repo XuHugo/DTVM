@@ -146,9 +146,5 @@ name = "advanced_host_test"
 path = "rust_example/src/advanced_host_test.rs"
 
 [[bin]]
-name = "contract_factory_test"
-path = "rust_example/src/contract_factory_test.rs"
-
-[[bin]]
 name = "counter_test"
 path = "rust_example/src/counter_test.rs"

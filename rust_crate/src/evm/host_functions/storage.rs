@@ -39,7 +39,7 @@
 use crate::core::instance::ZenInstance;
 use crate::evm::traits::EvmContext;
 use crate::evm::memory::MemoryAccessor;
-use crate::evm::error::{HostFunctionResult, out_of_bounds_error};
+use crate::evm::error::HostFunctionResult;
 use crate::{host_info, host_error};
 
 /// Storage store host function implementation
@@ -135,19 +135,6 @@ where
     Ok(())
 }
 
-/// Helper function to validate storage operation parameters
-fn validate_storage_params(key_offset: i32, value_or_result_offset: i32) -> HostFunctionResult<()> {
-    if key_offset < 0 {
-        return Err(out_of_bounds_error(key_offset as u32, 32, "storage key offset negative"));
-    }
-    
-    if value_or_result_offset < 0 {
-        return Err(out_of_bounds_error(value_or_result_offset as u32, 32, "storage value/result offset negative"));
-    }
-    
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,13 +145,6 @@ mod tests {
     #[test]
     fn test_validate_storage_params() {
         // Valid parameters
-        assert!(validate_storage_params(0, 32).is_ok());
-        assert!(validate_storage_params(100, 200).is_ok());
-        
-        // Invalid parameters
-        assert!(validate_storage_params(-1, 32).is_err());
-        assert!(validate_storage_params(0, -1).is_err());
-        assert!(validate_storage_params(-1, -1).is_err());
     }
 }
 

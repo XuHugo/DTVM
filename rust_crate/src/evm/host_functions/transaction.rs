@@ -107,7 +107,7 @@ pub fn get_gas_left<T>(instance: &ZenInstance<T>) -> i64
 where
     T: EvmContext,
 {
-    let context = &instance.extra_ctx;
+    //let _context = &instance.extra_ctx;
     let gas_left = instance.get_gas_left();
     //let gas_left = context.get_gas_left();
     

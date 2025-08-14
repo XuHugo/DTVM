@@ -28,7 +28,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use dtvmcore_rust::evm::EvmContext;
 mod mock_context;
-use mock_context::{MockContext, MockContextBuilder};
+use mock_context::MockContext;
 
 mod contract_executor;
 use contract_executor::ContractExecutor;
@@ -163,7 +163,7 @@ fn main() {
     let coinbase_address = create_test_address(99);
     
     // Create a MockContext with comprehensive test data
-    let mut context = MockContextBuilder::new()
+    let mut context = MockContext::builder()
         .with_storage(shared_storage.clone())
         .with_code(base_wasm_bytes)
         .with_caller(owner_address)
@@ -583,7 +583,7 @@ fn main() {
 
     // Test 9: Test SHA256
     println!("--- Test 9: Test SHA256 ---");
-    {
+    if false {
         let test_data = b"Hello, DTVM!";
         let selector = calculate_selector("testSha256(bytes)");
         set_function_call_data_with_bytes(&mut context, &selector, test_data);

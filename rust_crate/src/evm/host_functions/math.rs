@@ -291,6 +291,7 @@ fn bigint_to_bytes32(value: &BigUint) -> [u8; 32] {
 }
 
 /// Helper function to validate modular arithmetic parameters
+#[allow(dead_code)]
 fn validate_modular_params(
     a_offset: i32,
     b_offset: i32,

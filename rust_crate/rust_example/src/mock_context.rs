@@ -7,7 +7,7 @@
 //! for testing and development purposes. Users should create their own
 //! context implementations based on their specific needs.
 
-use std::fs;
+
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -904,6 +904,150 @@ impl MockContext {
         println!("📋 Contract registry updated");
     }
 
+    /// Generate CREATE address according to Ethereum rules
+    /// address = keccak256(rlp([sender, nonce]))[12:]
+    fn generate_create_address(&self, sender: &[u8; 20], nonce: u64) -> [u8; 20] {
+        use sha3::{Digest, Keccak256};
+        
+        // Simple RLP encoding for [sender, nonce]
+        let mut rlp_data = Vec::new();
+        
+        // RLP encode the array [sender, nonce]
+        let sender_rlp = self.rlp_encode_bytes(sender);
+        let nonce_rlp = self.rlp_encode_uint(nonce);
+        
+        let total_length = sender_rlp.len() + nonce_rlp.len();
+        if total_length < 56 {
+            rlp_data.push(0xc0 + total_length as u8); // Short list prefix
+        } else {
+            // Long list encoding (not implemented for simplicity)
+            rlp_data.push(0xc0 + total_length as u8);
+        }
+        
+        rlp_data.extend_from_slice(&sender_rlp);
+        rlp_data.extend_from_slice(&nonce_rlp);
+        
+        // Hash the RLP encoded data
+        let hash = Keccak256::digest(&rlp_data);
+        
+        // Take the last 20 bytes as the address
+        let mut address = [0u8; 20];
+        address.copy_from_slice(&hash[12..32]);
+        
+        println!("   📍 CREATE address generation:");
+        println!("      Sender: 0x{}", hex::encode(sender));
+        println!("      Nonce: {}", nonce);
+        println!("      RLP data: 0x{}", hex::encode(&rlp_data));
+        println!("      Hash: 0x{}", hex::encode(&hash));
+        println!("      Address: 0x{}", hex::encode(&address));
+        
+        address
+    }
+
+    /// Generate CREATE2 address according to Ethereum rules
+    /// address = keccak256(0xff ++ sender ++ salt ++ keccak256(init_code))[12:]
+    fn generate_create2_address(&self, sender: &[u8; 20], salt: &[u8; 32], init_code: &[u8]) -> [u8; 20] {
+        use sha3::{Digest, Keccak256};
+        
+        // Hash the init code
+        let init_code_hash = Keccak256::digest(init_code);
+        
+        // Construct the data: 0xff ++ sender ++ salt ++ keccak256(init_code)
+        let mut data = Vec::with_capacity(1 + 20 + 32 + 32);
+        data.push(0xff);
+        data.extend_from_slice(sender);
+        data.extend_from_slice(salt);
+        data.extend_from_slice(&init_code_hash);
+        
+        // Hash the constructed data
+        let hash = Keccak256::digest(&data);
+        
+        // Take the last 20 bytes as the address
+        let mut address = [0u8; 20];
+        address.copy_from_slice(&hash[12..32]);
+        
+        println!("   📍 CREATE2 address generation:");
+        println!("      Sender: 0x{}", hex::encode(sender));
+        println!("      Salt: 0x{}", hex::encode(salt));
+        println!("      Init code length: {} bytes", init_code.len());
+        println!("      Init code hash: 0x{}", hex::encode(&init_code_hash));
+        println!("      Data: 0x{}", hex::encode(&data));
+        println!("      Hash: 0x{}", hex::encode(&hash));
+        println!("      Address: 0x{}", hex::encode(&address));
+        
+        address
+    }
+
+    /// Simple RLP encoding for bytes (addresses)
+    fn rlp_encode_bytes(&self, bytes: &[u8]) -> Vec<u8> {
+        let mut result = Vec::new();
+        
+        if bytes.len() == 1 && bytes[0] < 0x80 {
+            // Single byte less than 0x80
+            result.push(bytes[0]);
+        } else if bytes.len() < 56 {
+            // Short string
+            result.push(0x80 + bytes.len() as u8);
+            result.extend_from_slice(bytes);
+        } else {
+            // Long string (not implemented for simplicity)
+            result.push(0x80 + bytes.len() as u8);
+            result.extend_from_slice(bytes);
+        }
+        
+        result
+    }
+
+    /// Simple RLP encoding for unsigned integers
+    fn rlp_encode_uint(&self, value: u64) -> Vec<u8> {
+        if value == 0 {
+            return vec![0x80]; // Empty string for zero
+        }
+        
+        // Convert to minimal big-endian representation
+        let mut bytes = value.to_be_bytes().to_vec();
+        
+        // Remove leading zeros
+        while bytes.len() > 1 && bytes[0] == 0 {
+            bytes.remove(0);
+        }
+        
+        if bytes.len() == 1 && bytes[0] < 0x80 {
+            // Single byte less than 0x80
+            bytes
+        } else if bytes.len() < 56 {
+            // Short string
+            let mut result = vec![0x80 + bytes.len() as u8];
+            result.extend_from_slice(&bytes);
+            result
+        } else {
+            // Long string (not implemented for simplicity)
+            let mut result = vec![0x80 + bytes.len() as u8];
+            result.extend_from_slice(&bytes);
+            result
+        }
+    }
+
+    /// Get a mock nonce for the given address
+    /// In a real implementation, this would be retrieved from the account state
+    fn get_mock_nonce(&self, address: &[u8; 20]) -> u64 {
+        // Generate a simple mock nonce based on address and current context
+        // This ensures some determinism while being different for different addresses
+        let mut nonce = 0u64;
+        
+        // Use address bytes to influence nonce
+        for (i, &byte) in address.iter().enumerate() {
+            nonce += (byte as u64) * (i as u64 + 1);
+        }
+        
+        // Add some context-based variation
+        nonce += self.block_info.number as u64;
+        nonce += self.block_info.timestamp as u64;
+        
+        // Keep it reasonable (simulate account nonce)
+        nonce % 1000
+    }
+
     /// Execute a contract call using ContractExecutor
     fn execute_contract_call(&self, target_code: Vec<u8>, call_data: Vec<u8>, caller: [u8; 20], target: [u8; 20], value: [u8; 32], contract_name: &str) -> Result<ContractExecutionResult, String> {
         // Create a new context for the contract call
@@ -935,7 +1079,7 @@ impl MockContext {
         deploy_context.set_address(new_address);
         deploy_context.set_call_value(value);
         deploy_context.set_call_data(data);
-        deploy_context.contract_code = code;
+        deploy_context.contract_code = code[4..].to_vec();
         
         // Create a contract executor
         let executor = ContractExecutor::new()
@@ -1371,47 +1515,22 @@ impl ContractCallProvider for MockContext {
             println!("   Gas: {}", gas);
         }
 
-        // Generate a deterministic contract address
-        let mut new_address = [0u8; 20];
-        
-        if is_create2 {
-            // CREATE2 address generation: keccak256(0xff ++ creator ++ salt ++ keccak256(code))
-            new_address[0] = 0xc2; // CREATE2 prefix
-            new_address[1] = creator[19]; // Use last byte of creator
-            if let Some(salt_bytes) = salt {
-                new_address[2] = salt_bytes[31]; // Use last byte of salt
-                new_address[3] = salt_bytes[30]; // Use second-to-last byte of salt
-            }
-            new_address[4] = (code.len() % 256) as u8; // Code length influence
-            
-            // Fill remaining bytes with a pattern based on salt and code
-            for i in 5..20 {
-                let salt_influence = if let Some(s) = salt { s[i % 32] } else { 0 };
-                new_address[i] = ((i * 19 + salt_influence as usize + code.len()) % 256) as u8;
-            }
+        // Generate contract address according to Ethereum rules
+        let new_address = if is_create2 {
+            // CREATE2 address generation: keccak256(0xff ++ creator ++ salt ++ keccak256(init_code))[12:]
+            let salt_bytes = salt.unwrap_or([0u8; 32]);
+            self.generate_create2_address(creator, &salt_bytes, code)
         } else {
-            // CREATE address generation: keccak256(creator ++ nonce)
-            new_address[0] = 0xc0; // CREATE prefix
-            new_address[1] = creator[19]; // Use last byte of creator
-            new_address[2] = (code.len() % 256) as u8; // Code length influence
-            new_address[3] = (data.len() % 256) as u8; // Data length influence
-            
-            // Fill remaining bytes with a pattern
-            for i in 4..20 {
-                new_address[i] = ((i * 17 + code.len() + data.len()) % 256) as u8;
-            }
-        }
+            // CREATE address generation: keccak256(rlp([sender, nonce]))[12:]
+            // For simplicity, we'll use a mock nonce based on current context
+            let nonce = self.get_mock_nonce(creator);
+            self.generate_create_address(creator, nonce)
+        };
 
         println!("   Generated contract address: 0x{}", hex::encode(&new_address));
 
         // Simulate gas consumption based on code size
         let gas_used = 21000 + (code.len() as i64 * 200) + (data.len() as i64 * 68);
-        let remaining_gas = gas - gas_used;
-
-        // if remaining_gas < 0 {
-        //     println!("   ❌ Out of gas: required={}, available={}", gas_used, gas);
-        //     return ContractCreateResult::failure(vec![], gas);
-        // }
 
         // Check for simple failure conditions
         if code.is_empty() {

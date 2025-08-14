@@ -25,7 +25,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use dtvmcore_rust::evm::EvmContext;
 mod mock_context;
-use mock_context::{MockContext, MockContextBuilder};
+use mock_context::MockContext;
 mod contract_executor;
 use contract_executor::ContractExecutor;
 
@@ -134,7 +134,7 @@ fn main() {
     println!("✓ Shared storage created.");
 
     // Create a single MockContext that will be used for all calls
-    let mut context = MockContextBuilder::new()
+    let mut context = MockContext::builder()
                     .with_storage(shared_storage.clone())
                     .with_code(token_wasm_bytes)
                     .build();
