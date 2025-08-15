@@ -19,3 +19,6 @@ cc = "1.0"
 [dependencies]
 cty = "0.2.2"
 libc = { version = "0.2.121" }
+parity-wasm = "0.42.2"
+pwasm-utils = "0.18.2"
+wat = "1.0"
