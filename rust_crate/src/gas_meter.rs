@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use wasm_instrument::gas_metering::{
-    host_function::Injector as HostFunctionInjector, inject, ConstantCostRules,
+    host_function::Injector as HostFunctionInjector, inject, ConstantCostRules, Rules,
 };
 use wasm_instrument::parity_wasm::{elements, serialize};
 
@@ -12,15 +12,14 @@ pub struct GasMeter;
 impl GasMeter {
     /// Transform WASM with default gas configuration
     pub fn transform_default(input_wasm: &[u8]) -> Result<Vec<u8>, String> {
-        Self::transform_with_rules(input_wasm, 1, 8192, 1)
+        let gas_rules = ConstantCostRules::new(1, 8192, 1);
+        Self::transform_with_rules(input_wasm, gas_rules)
     }
 
     /// Transform WASM with custom gas rules
-    pub fn transform_with_rules(
+    pub fn transform_with_rules<T: Rules>(
         input_wasm: &[u8],
-        instruction_cost: u32,
-        memory_grow_cost: u32,
-        call_per_local_cost: u32,
+        gas_rules: T,
     ) -> Result<Vec<u8>, String> {
         let module = match elements::Module::from_bytes(input_wasm) {
             Ok(m) => m,
@@ -29,7 +28,6 @@ impl GasMeter {
             }
         };
 
-        let gas_rules = ConstantCostRules::new(instruction_cost, memory_grow_cost, call_per_local_cost);
         let injector = HostFunctionInjector::new("gas", "gas");
 
         let injected_module = match inject(module, injector, &gas_rules) {
@@ -62,13 +60,16 @@ mod tests {
                 (export "add" (func $add))
             )
         "#;
-        
+
         let wasm_bytes = wat::parse_str(wat).expect("Failed to parse WAT");
         let result = GasMeter::transform_default(&wasm_bytes);
-        
+
         assert!(result.is_ok(), "Transform should succeed");
         let transformed = result.unwrap();
-        assert!(!transformed.is_empty(), "Transformed WASM should not be empty");
+        assert!(
+            !transformed.is_empty(),
+            "Transformed WASM should not be empty"
+        );
     }
 
     #[test]
@@ -84,10 +85,11 @@ mod tests {
                 (export "test" (func $test))
             )
         "#;
-        
+
         let wasm_bytes = wat::parse_str(wat).expect("Failed to parse WAT");
-        let result = GasMeter::transform_with_rules(&wasm_bytes, 5, 32768, 3);
-        
+        let custom_rules = ConstantCostRules::new(5, 32768, 3);
+        let result = GasMeter::transform_with_rules(&wasm_bytes, custom_rules);
+
         assert!(result.is_ok(), "Transform with rules should succeed");
     }
 
@@ -95,8 +97,71 @@ mod tests {
     fn test_transform_invalid_wasm() {
         let invalid_wasm = b"invalid wasm bytes";
         let result = GasMeter::transform_default(invalid_wasm);
-        
+
         assert!(result.is_err(), "Transform should fail with invalid WASM");
         assert!(result.unwrap_err().contains("Failed to parse WASM"));
+    }
+
+    #[test]
+    fn test_transform_with_custom_rules() {
+        use wasm_instrument::parity_wasm::elements::Instruction;
+
+        // Define custom gas rules
+        struct MyRules;
+
+        impl Rules for MyRules {
+            fn instruction_cost(&self, instruction: &Instruction) -> Option<u32> {
+                match instruction {
+                    Instruction::Nop => Some(1),
+                    Instruction::I32Add => Some(3),
+                    Instruction::I32Const(_) => Some(2),
+                    Instruction::Drop => Some(1),
+                    Instruction::If(_) => Some(10),
+                    Instruction::Loop(_) => Some(15),
+                    Instruction::Call(_) => Some(20),
+                    Instruction::CallIndirect(_, _) => Some(25),
+                    // Allow most other instructions with default cost
+                    _ => Some(5),
+                }
+            }
+
+            fn memory_grow_cost(&self) -> wasm_instrument::gas_metering::MemoryGrowCost {
+                use std::num::NonZeroU32;
+                wasm_instrument::gas_metering::MemoryGrowCost::Linear(NonZeroU32::new(16384).unwrap())
+            }
+
+            fn call_per_local_cost(&self) -> u32 {
+                2
+            }
+        }
+
+        let wat = r#"
+            (module
+                (func $custom_test
+                    i32.const 10
+                    i32.const 20
+                    i32.add
+                    drop
+                    nop
+                )
+                (export "custom_test" (func $custom_test))
+            )
+        "#;
+
+        let wasm_bytes = wat::parse_str(wat).expect("Failed to parse WAT");
+        let custom_rules = MyRules;
+        let result = GasMeter::transform_with_rules(&wasm_bytes, custom_rules);
+
+        assert!(result.is_ok(), "Transform with custom rules should succeed");
+        let transformed = result.unwrap();
+        assert!(
+            !transformed.is_empty(),
+            "Transformed WASM should not be empty"
+        );
+        // The transformed WASM should be different from original due to gas injection
+        assert_ne!(
+            transformed, wasm_bytes,
+            "Transformed WASM should be different from original"
+        );
     }
 }
