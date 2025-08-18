@@ -1,11 +1,8 @@
 // Copyright (C) 2021-2025 the DTVM authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use wasm_instrument::gas_metering::{
-    host_function::Injector as HostFunctionInjector, inject, ConstantCostRules, Rules,
-};
-use wasm_instrument::parity_wasm::{elements, serialize};
-
+use dtvm_instrument::gas_metering::{inject, ConstantCostRules, Rules};
+use dtvm_instrument::parity_wasm::{elements, serialize};
 /// Simple gas meter for WASM modules
 pub struct GasMeter;
 
@@ -28,9 +25,7 @@ impl GasMeter {
             }
         };
 
-        let injector = HostFunctionInjector::new("gas", "gas");
-
-        let injected_module = match inject(module, injector, &gas_rules) {
+        let injected_module = match inject(module, &gas_rules) {
             Ok(module) => module,
             Err(err) => {
                 return Err(format!("Failed to inject gas metering: {:?}", err));
@@ -104,7 +99,7 @@ mod tests {
 
     #[test]
     fn test_transform_with_custom_rules() {
-        use wasm_instrument::parity_wasm::elements::Instruction;
+        use dtvm_instrument::parity_wasm::elements::Instruction;
 
         // Define custom gas rules
         struct MyRules;
@@ -125,9 +120,11 @@ mod tests {
                 }
             }
 
-            fn memory_grow_cost(&self) -> wasm_instrument::gas_metering::MemoryGrowCost {
+            fn memory_grow_cost(&self) -> dtvm_instrument::gas_metering::MemoryGrowCost {
                 use std::num::NonZeroU32;
-                wasm_instrument::gas_metering::MemoryGrowCost::Linear(NonZeroU32::new(16384).unwrap())
+                dtvm_instrument::gas_metering::MemoryGrowCost::Linear(
+                    NonZeroU32::new(16384).unwrap(),
+                )
             }
 
             fn call_per_local_cost(&self) -> u32 {
