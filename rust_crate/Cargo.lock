@@ -30,13 +30,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b365fabc795046672053e29c954733ec3b05e4be654ab130fe8f1f94d7051f35"
 
 [[package]]
+name = "dtvm-instrument"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eefe45cf8cff7eb88c15fc4407e983ea9b122cd48ce92444190d3fe32ddb5de8"
+dependencies = [
+ "parity-wasm",
+]
+
+[[package]]
 name = "dtvmcore_rust"
 version = "0.1.0"
 dependencies = [
  "cc",
  "cty",
+ "dtvm-instrument",
  "libc",
- "wasm-instrument",
  "wat",
 ]
 
@@ -106,15 +115,6 @@ checksum = "724fccfd4f3c24b7e589d333fc0429c68042897a7e8a5f8694f31792471841e7"
 dependencies = [
  "leb128fmt",
  "wasmparser",
-]
-
-[[package]]
-name = "wasm-instrument"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a47ecb37b9734d1085eaa5ae1a81e60801fd8c28d4cabdd8aedb982021918bc"
-dependencies = [
- "parity-wasm",
 ]
 
 [[package]]
