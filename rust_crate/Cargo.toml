@@ -20,4 +20,8 @@ cc = "1.0"
 cty = "0.2.2"
 libc = { version = "0.2.121" }
 wat = "1.0"
-dtvm-instrument = { version = "0.1.0", registry = "crates-io" }
+parity-wasm = { version = "0.45", default-features = false }
+
+[dev-dependencies]
+binaryen = "0.12"
+rand = "0.8"

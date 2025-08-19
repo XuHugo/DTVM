@@ -2,5 +2,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod core;
-pub mod gas_meter;
+pub mod gas_metering;
 pub mod tests;

@@ -7,7 +7,7 @@ mod tests {
     use std::rc::Rc;
 
     use crate::core::{instance::ZenInstance, runtime::ZenRuntime, types::ZenValue};
-    use crate::gas_meter::GasMeter;
+    use crate::gas_metering::GasMeter;
 
     /// Helper function to compile WAST to WASM if needed
     fn get_wasm_bytes(wast_path: &str, wasm_path: &str) -> Result<Vec<u8>, String> {
@@ -86,7 +86,12 @@ mod tests {
                 panic!("Infinite loop should have been stopped by gas limit");
             }
             Err(err) => {
-                println!("✅ Function stopped as expected: {:?}", err);
+                assert_eq!(
+                    "error_code: 90099\nerror_msg: OutOfGas".to_string(),
+                    err,
+                    "✅ Function stopped as :  {}",
+                    err
+                );
                 assert_eq!(0, inst.get_gas_left(), "Gas left: {}", inst.get_gas_left());
             }
         }
@@ -107,13 +112,14 @@ mod tests {
 
         match results {
             Ok(values) => {
-                println!(
-                    "✅ Function completed successfully, gas left: {}",
+                assert_eq!(
+                    999998,
+                    inst.get_gas_left(),
+                    "Expected gas left 999998, got {}",
                     inst.get_gas_left()
                 );
 
                 if !values.is_empty() {
-                    println!("📤 Return value: {}", values[0]);
                     // Should return 42 as defined in the WAST file
                     if let ZenValue::ZenI32Value(val) = &values[0] {
                         assert_eq!(42, *val, "Expected return value 42, got {}", val);
