@@ -1,7 +1,7 @@
 // Copyright (C) 2021-2025 the DTVM authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-use std::process::Command;
+//use std::process::Command;
 
 fn main() {
     let project_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -9,26 +9,26 @@ fn main() {
     let target_dir = std::env::var("OUT_DIR").unwrap();
     println!("The target directory is {}.", target_dir);
 
-    // build zetaengine C++ project
-    println!("building zetaengine...");
-    let mut build_cpp_lib_cmd = Command::new("bash");
-    build_cpp_lib_cmd.arg("build_cpp_lib.sh");
-    build_cpp_lib_cmd.arg("cache");
-    build_cpp_lib_cmd.current_dir(&project_dir);
-    let mut build_cpp_lib_cmd_handle = build_cpp_lib_cmd
-        .spawn()
-        .expect("build zetaengine C++ project failed");
-    build_cpp_lib_cmd_handle.wait().unwrap();
-    println!("built zetaengine done");
+    // // build zetaengine C++ project
+    // println!("building zetaengine...");
+    // let mut build_cpp_lib_cmd = Command::new("bash");
+    // build_cpp_lib_cmd.arg("build_cpp_lib.sh");
+    // build_cpp_lib_cmd.arg("cache");
+    // build_cpp_lib_cmd.current_dir(&project_dir);
+    // let mut build_cpp_lib_cmd_handle = build_cpp_lib_cmd
+    //     .spawn()
+    //     .expect("build zetaengine C++ project failed");
+    // build_cpp_lib_cmd_handle.wait().unwrap();
+    // println!("built zetaengine done");
 
-    // copy zetaengine static libs to rust crate project dir
-    let mut copy_cpp_lib_cmd = Command::new("bash");
-    copy_cpp_lib_cmd.arg("copy_deps.sh");
-    copy_cpp_lib_cmd.current_dir(&project_dir);
-    let mut copy_cpp_lib_cmd_handle = copy_cpp_lib_cmd
-        .spawn()
-        .expect("build zetaengine C++ project failed");
-    copy_cpp_lib_cmd_handle.wait().unwrap();
+    // // copy zetaengine static libs to rust crate project dir
+    // let mut copy_cpp_lib_cmd = Command::new("bash");
+    // copy_cpp_lib_cmd.arg("copy_deps.sh");
+    // copy_cpp_lib_cmd.current_dir(&project_dir);
+    // let mut copy_cpp_lib_cmd_handle = copy_cpp_lib_cmd
+    //     .spawn()
+    //     .expect("build zetaengine C++ project failed");
+    // copy_cpp_lib_cmd_handle.wait().unwrap();
 
     // copy and link zetaengine static libs
     enum LibType {

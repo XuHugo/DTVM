@@ -12,7 +12,7 @@
 //! the worst case.
 
 use super::gas_inject::{MeteredBlock, Rules};
-use parity_wasm::elements::{FuncBody, Instruction};
+use super::simple_compat::elements::{FuncBody, Instruction};
 use std::collections::BTreeMap as Map;
 
 /// An ID for a node in a ControlFlowGraph.
@@ -359,7 +359,7 @@ mod tests {
     };
 
     use binaryen::tools::translate_to_fuzz_mvp;
-    use parity_wasm::elements;
+    use super::super::simple_compat::elements;
     use rand::{thread_rng, RngCore};
 
     #[test]

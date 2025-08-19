@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::gas_inject::{inject, ConstantCostRules, Rules};
-use parity_wasm::{elements, serialize};
+use super::simple_compat::{elements, serialize};
 /// Simple gas meter for WASM modules
 pub struct GasMeter;
 
@@ -43,40 +43,44 @@ impl GasMeter {
 mod tests {
     use super::*;
     use crate::core::{runtime::ZenRuntime, types::ZenValue};
-    use parity_wasm::elements;
+    use wasmparser::{Parser, Payload};
 
     /// Find exported gas function index and assert that calls to it exist in the code
     fn assert_gas_export_and_calls(wasm_bytes: &[u8]){
-        let module = elements::Module::from_bytes(wasm_bytes).expect("Failed to parse transformed WASM");
-
-        // Locate __instrumented_use_gas export and get its internal function index
+        let mut parser = Parser::new(0);
         let mut gas_fn_index: Option<u32> = None;
-        if let Some(export_section) = module.export_section() {
-            for export in export_section.entries() {
-                if export.field() == "__instrumented_use_gas" {
-                    if let elements::Internal::Function(idx) = export.internal() {
-                        gas_fn_index = Some(*idx);
-                    }
-                }
-            }
-        }
-        assert!(gas_fn_index.is_some(), "Transformed WASM should export __instrumented_use_gas");
-        let gas_idx = gas_fn_index.unwrap();
-        
-        // Scan for calls to the gas function index
         let mut found_call = false;
-        if let Some(code_section) = module.code_section() {
-            'outer: for body in code_section.bodies() {
-                for instruction in body.code().elements() {
-                    if let elements::Instruction::Call(func_idx) = instruction {
-                        if *func_idx == gas_idx {
-                            found_call = true;
-                            break 'outer;
+
+        for payload in parser.parse_all(wasm_bytes) {
+            match payload.expect("Failed to parse transformed WASM") {
+                Payload::ExportSection(reader) => {
+                    for export in reader {
+                        let export = export.expect("Failed to read export");
+                        if export.name == "__instrumented_use_gas" {
+                            if let wasmparser::ExternalKind::Func = export.kind {
+                                gas_fn_index = Some(export.index);
+                            }
                         }
                     }
                 }
+                Payload::CodeSectionEntry(body) => {
+                    if let Some(gas_idx) = gas_fn_index {
+                        let mut reader = body.get_operators_reader().expect("Failed to get operators reader");
+                        while !reader.eof() {
+                            if let Ok(wasmparser::Operator::Call { function_index }) = reader.read() {
+                                if function_index == gas_idx {
+                                    found_call = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
+        
+        assert!(gas_fn_index.is_some(), "Transformed WASM should export __instrumented_use_gas");
         assert!(found_call, "Transformed WASM should contain calls to the gas function");
     }
 
@@ -207,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_transform_with_custom_rules() {
-        use parity_wasm::elements::Instruction;
+        use crate::gas_metering::simple_compat::elements::Instruction;
 
         // Define custom gas rules
         struct MyRules;

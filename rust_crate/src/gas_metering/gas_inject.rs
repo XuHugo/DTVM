@@ -11,7 +11,7 @@ extern crate alloc;
 
 use alloc::{vec, vec::Vec};
 use core::{cmp::min, mem, num::NonZeroU32};
-use parity_wasm::{
+use super::simple_compat::{
     builder,
     elements::{self, Instruction, ValueType},
 };
@@ -454,7 +454,7 @@ impl Counter {
 }
 
 fn inject_grow_counter(instructions: &mut elements::Instructions, grow_counter_func: u32) -> usize {
-    use parity_wasm::elements::Instruction::*;
+    use elements::Instruction::*;
     let mut counter = 0;
     for instruction in instructions.elements_mut() {
         if let GrowMemory(_) = *instruction {
@@ -470,7 +470,7 @@ fn add_grow_counter<R: Rules>(
     rules: &R,
     gas_func: u32,
 ) -> elements::Module {
-    use parity_wasm::elements::Instruction::*;
+    use elements::Instruction::*;
 
     let cost = match rules.memory_grow_cost() {
         MemoryGrowCost::Free => return module,
@@ -509,7 +509,7 @@ pub(crate) fn determine_metered_blocks<R: Rules>(
     rules: &R,
     locals_count: u32,
 ) -> Result<Vec<MeteredBlock>, ()> {
-    use parity_wasm::elements::Instruction::*;
+    use elements::Instruction::*;
 
     let mut counter = Counter::new();
 
@@ -605,7 +605,7 @@ fn insert_metering_calls(
     blocks: Vec<MeteredBlock>,
     gas_func: u32,
 ) -> Result<(), ()> {
-    use parity_wasm::elements::Instruction::*;
+    use elements::Instruction::*;
 
     // To do this in linear time, construct a new vector of instructions, copying over old
     // instructions one by one and injecting new ones as required.
