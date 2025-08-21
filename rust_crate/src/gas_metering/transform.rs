@@ -3,12 +3,32 @@
 
 use super::gas_inject::{inject, ConstantCostRules, Rules};
 use parity_wasm::{elements, serialize};
+use thiserror::Error;
+
 /// Simple gas meter for WASM modules
+#[derive(Error, Debug)]
+pub enum TransformError {
+    #[error("Failed to parse WASM: {0}")]
+    Parse(elements::Error),
+
+    #[error("Failed to inject gas metering: {0}")]
+    Inject(String),
+
+    #[error("Failed to serialize WASM: {0}")]
+    Serialize(elements::Error),
+}
 pub struct GasMeter;
 
 impl GasMeter {
     /// Transform WASM with default gas configuration
-    pub fn transform_default(input_wasm: &[u8]) -> Result<Vec<u8>, String> {
+    pub fn transform_default(input_wasm: &[u8]) -> Result<Vec<u8>, TransformError> {
+        // Example: ConstantCostRules::new(1, 8192, 1)
+        // - instruction_cost = 1 gas per opcode
+        // - memory_grow_cost = 8192 gas per 64 KiB memory page
+        // - call_per_local_cost = 1 gas per local per call
+        //
+        // These defaults are conservative and may be tuned based on benchmarks
+        // or the specific economic model of the runtime.
         let gas_rules = ConstantCostRules::new(1, 8192, 1);
         Self::transform_with_rules(input_wasm, gas_rules)
     }
@@ -17,25 +37,13 @@ impl GasMeter {
     pub fn transform_with_rules<T: Rules>(
         input_wasm: &[u8],
         gas_rules: T,
-    ) -> Result<Vec<u8>, String> {
-        let module = match elements::Module::from_bytes(input_wasm) {
-            Ok(m) => m,
-            Err(err) => {
-                return Err(format!("Failed to parse WASM: {:?}", err));
-            }
-        };
+    ) -> Result<Vec<u8>, TransformError> {
+        let module = elements::Module::from_bytes(input_wasm).map_err(TransformError::Parse)?;
 
-        let injected_module = match inject(module, &gas_rules) {
-            Ok(module) => module,
-            Err(err) => {
-                return Err(format!("Failed to inject gas metering: {:?}", err));
-            }
-        };
+        let injected_module = inject(module, &gas_rules)
+            .map_err(|err| TransformError::Inject(format!("{:?}", err)))?;
 
-        match serialize(injected_module) {
-            Ok(bytes) => Ok(bytes),
-            Err(err) => Err(format!("Failed to serialize WASM: {:?}", err)),
-        }
+        serialize(injected_module).map_err(TransformError::Serialize)
     }
 }
 
@@ -45,39 +53,45 @@ mod tests {
     use crate::core::{runtime::ZenRuntime, types::ZenValue};
     use parity_wasm::elements;
 
+    const INSTRUMENTED_USE_GAS: &str = "__instrumented_use_gas";
+
     /// Find exported gas function index and assert that calls to it exist in the code
-    fn assert_gas_export_and_calls(wasm_bytes: &[u8]){
-        let module = elements::Module::from_bytes(wasm_bytes).expect("Failed to parse transformed WASM");
+    fn assert_gas_export_and_calls(wasm_bytes: &[u8]) {
+        let module =
+            elements::Module::from_bytes(wasm_bytes).expect("Failed to parse transformed WASM");
 
         // Locate __instrumented_use_gas export and get its internal function index
-        let mut gas_fn_index: Option<u32> = None;
-        if let Some(export_section) = module.export_section() {
-            for export in export_section.entries() {
-                if export.field() == "__instrumented_use_gas" {
+        let gas_fn_index: Option<u32> = module.export_section().and_then(|export_section| {
+            export_section.entries().iter().find_map(|export| {
+                if export.field() == INSTRUMENTED_USE_GAS {
                     if let elements::Internal::Function(idx) = export.internal() {
-                        gas_fn_index = Some(*idx);
+                        return Some(*idx);
                     }
                 }
-            }
-        }
-        assert!(gas_fn_index.is_some(), "Transformed WASM should export __instrumented_use_gas");
+                None
+            })
+        });
+        assert!(
+            gas_fn_index.is_some(),
+            "Transformed WASM should export __instrumented_use_gas"
+        );
         let gas_idx = gas_fn_index.unwrap();
-        
+
         // Scan for calls to the gas function index
-        let mut found_call = false;
-        if let Some(code_section) = module.code_section() {
-            'outer: for body in code_section.bodies() {
-                for instruction in body.code().elements() {
-                    if let elements::Instruction::Call(func_idx) = instruction {
-                        if *func_idx == gas_idx {
-                            found_call = true;
-                            break 'outer;
-                        }
-                    }
-                }
-            }
-        }
-        assert!(found_call, "Transformed WASM should contain calls to the gas function");
+        let found_call = module
+            .code_section()
+            .map_or(false,|code_section|{
+                code_section
+                    .bodies()
+                    .iter()
+                    .flat_map(|body| body.code().elements())
+                    .any(|instruction| matches!(instruction, elements::Instruction::Call(idx) if *idx == gas_idx))
+            });
+
+        assert!(
+            found_call,
+            "Transformed WASM should contain calls to the gas function"
+        );
     }
 
     /// Execute a function with given args and allow caller to validate results and gas via callbacks
@@ -88,8 +102,7 @@ mod tests {
         args: &[ZenValue],
         validate_results: F,
         validate_gas: G,
-    ) 
-    where
+    ) where
         F: Fn(&[ZenValue]),
         G: Fn(u64),
     {
@@ -99,15 +112,13 @@ mod tests {
             .load_module_from_bytes("transformed_test.wasm", wasm_bytes)
             .expect("Failed to load transformed WASM module.");
 
-        let isolation = rt
-            .new_isolation()
-            .expect("Failed to create isolation.");
-
+        let isolation = rt.new_isolation().expect("Failed to create isolation.");
         let inst = wasm_mod
             .new_instance(isolation, gas_limit)
             .expect("Failed to create WASM instance.");
 
-        let values = inst.call_wasm_func(func_name, args)
+        let values = inst
+            .call_wasm_func(func_name, args)
             .expect("Failed to call function");
 
         // Let caller validate return values
@@ -132,25 +143,25 @@ mod tests {
         "#;
 
         let wasm_bytes = wat::parse_str(wat).expect("Failed to parse WAT");
-        let transformed = GasMeter::transform_default(&wasm_bytes).expect("Transform should succeed");
+        let transformed =
+            GasMeter::transform_default(&wasm_bytes).expect("Transform should succeed");
 
         // 1) Validate gas export and injected calls
         assert_gas_export_and_calls(&transformed);
 
         // 2) Execute transformed module and validate gas consumption using generic helper
         let args = vec![ZenValue::ZenI32Value(5), ZenValue::ZenI32Value(3)];
-        let _ = execute_and_assert(
+        execute_and_assert(
             &transformed,
             1000,
             "add",
             &args,
             |values| {
-                assert!(!values.is_empty(), "Function should return a value");
-                if let ZenValue::ZenI32Value(result) = values[0] {
-                    assert_eq!(result, 8, "Expected return 8, got {}", result);
-                } else {
-                    panic!("Expected i32 return value");
-                }
+                assert!(
+                    matches!(values[0], ZenValue::ZenI32Value(8)),
+                    "Expected return 8, got {}",
+                    values[0]
+                );
             },
             |left| {
                 assert_eq!(left, 997, "Expected gas left 997, got {}", left);
@@ -175,18 +186,17 @@ mod tests {
         let wasm_bytes = wat::parse_str(wat).expect("Failed to parse WAT");
         let custom_rules = ConstantCostRules::new(5, 32768, 3);
         let transformed = GasMeter::transform_with_rules(&wasm_bytes, custom_rules)
-        .expect("Transform with rules should succeed");
+            .expect("Transform with rules should succeed");
 
         // 1) Validate gas export and injected calls
         assert_gas_export_and_calls(&transformed);
 
         // 2) Execute transformed module and validate gas consumption using generic helper
-        let args = vec![];
-        let _ = execute_and_assert(
+        execute_and_assert(
             &transformed,
             1000,
             "test",
-            &args,
+            &[],
             |values| {
                 assert!(values.is_empty(), "Function should return empty values");
             },
@@ -202,7 +212,10 @@ mod tests {
         let result = GasMeter::transform_default(invalid_wasm);
 
         assert!(result.is_err(), "Transform should fail with invalid WASM");
-        assert!(result.unwrap_err().contains("Failed to parse WASM"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to parse WASM"));
     }
 
     #[test]
@@ -256,22 +269,22 @@ mod tests {
         let wasm_bytes = wat::parse_str(wat).expect("Failed to parse WAT");
         let custom_rules = MyRules;
         let transformed = GasMeter::transform_with_rules(&wasm_bytes, custom_rules)
-        .expect("Transform with rules should succeed");
+            .expect("Transform with rules should succeed");
 
         // 1) Validate gas export and injected calls
         assert_gas_export_and_calls(&transformed);
+
         // 2) Execute transformed module and validate gas consumption using generic helper
-        let args = vec![];
-        let _ = execute_and_assert(
+        execute_and_assert(
             &transformed,
             1000,
             "custom_test",
-            &args,
+            &[],
             |values| {
                 assert!(values.is_empty(), "Function should return empty values");
             },
             |left| {
-                assert_eq!(left, 991, "Expected gas left 980, got {}", left);
+                assert_eq!(left, 991, "Expected gas left 991, got {}", left);
             },
         );
     }

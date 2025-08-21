@@ -278,6 +278,73 @@ fn build_control_flow_graph(
     Ok(graph)
 }
 
+/// Iteratively search all paths in the control flow graph to validate gas costs.
+///
+/// This is an iterative, stack-based implementation of the original recursive `visit`
+/// function. It avoids potential stack overflows on Wasm modules with deeply nested
+/// control flow structures.
+fn visit_dfs(graph: &ControlFlowGraph) -> bool {
+    enum Phase {
+        Enter,
+        Exit,
+    }
+    type StackFrame = (NodeId, u64, u64, Phase);
+
+    let mut stack: Vec<StackFrame> = vec![(0, 0, 0, Phase::Enter)];
+    let mut loop_costs: Map<NodeId, (u64, u64)> = Map::new();
+
+    while let Some((node_id, total_actual, total_charged, phase)) = stack.pop() {
+        let node = graph.get_node(node_id);
+
+        if let Phase::Exit = phase {
+            // Post-order processing: clean up loop costs when we exit the scope of the loop entry.
+            if node.is_loop_target {
+                loop_costs.remove(&node_id);
+            }
+            continue;
+        }
+
+        // --- Phase::Enter ---
+        // Pre-order processing
+        let current_total_actual = total_actual + node.actual_cost;
+        let current_total_charged = total_charged + node.charged_cost;
+
+        if node.is_loop_target {
+            loop_costs.insert(node_id, (node.actual_cost, node.charged_cost));
+        }
+
+        // Validation Check #1: At a path's end, total costs must match.
+        if node.forward_edges.is_empty() && current_total_actual != current_total_charged {
+            return false;
+        }
+
+        // Validation Check #2: At a loop's back-edge, the loop entry's cost must be balanced.
+        for loop_node_id in node.loopback_edges.iter() {
+            let (loop_actual, loop_charged) = loop_costs
+                .get(loop_node_id)
+                .expect("cannot arrive at loopback edge without visiting loop entry node");
+            if loop_actual != loop_charged {
+                return false;
+            }
+        }
+
+        // Schedule the post-order (Exit) visit for the current node.
+        stack.push((node_id, 0, 0, Phase::Exit));
+
+        // Schedule the pre-order (Enter) visit for all children, in reverse order to maintain DFS order.
+        for next_node_id in node.forward_edges.iter().rev() {
+            stack.push((
+                *next_node_id,
+                current_total_actual,
+                current_total_charged,
+                Phase::Enter,
+            ));
+        }
+    }
+
+    true
+}
+
 /// Exhaustively search through all paths in the control flow graph, starting from the first node
 /// and ensure that 1) all paths with only forward edges ending with the terminal node have an
 /// equal total actual gas cost and total charged gas cost, and 2) all cycles beginning with a loop
@@ -287,56 +354,9 @@ fn build_control_flow_graph(
 ///
 /// In the worst case, this runs in time exponential in the size of the graph.
 fn validate_graph_gas_costs(graph: &ControlFlowGraph) -> bool {
-    fn visit(
-        graph: &ControlFlowGraph,
-        node_id: NodeId,
-        mut total_actual: u64,
-        mut total_charged: u64,
-        loop_costs: &mut Map<NodeId, (u64, u64)>,
-    ) -> bool {
-        let node = graph.get_node(node_id);
-
-        total_actual += node.actual_cost;
-        total_charged += node.charged_cost;
-
-        if node.is_loop_target {
-            loop_costs.insert(node_id, (node.actual_cost, node.charged_cost));
-        }
-
-        if node.forward_edges.is_empty() && total_actual != total_charged {
-            return false;
-        }
-
-        for loop_node_id in node.loopback_edges.iter() {
-            let (loop_actual, loop_charged) = loop_costs
-                .get_mut(loop_node_id)
-                .expect("cannot arrive at loopback edge without visiting loop entry node");
-            if loop_actual != loop_charged {
-                return false;
-            }
-        }
-
-        for next_node_id in node.forward_edges.iter() {
-            if !visit(
-                graph,
-                *next_node_id,
-                total_actual,
-                total_charged,
-                loop_costs,
-            ) {
-                return false;
-            }
-        }
-
-        if node.is_loop_target {
-            loop_costs.remove(&node_id);
-        }
-
-        true
-    }
-
-    // Recursively explore all paths through the execution graph starting from the entry node.
-    visit(graph, 0, 0, 0, &mut Map::new())
+    // The original recursive implementation could lead to stack overflows on deeply nested Wasm.
+    // It has been refactored into an iterative DFS approach in `visit_dfs`.
+    visit_dfs(graph)
 }
 
 /// Validate that the metered blocks are correct with respect to the function body by exhaustively

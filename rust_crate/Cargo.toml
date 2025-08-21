@@ -21,6 +21,7 @@ cty = "0.2.2"
 libc = { version = "0.2.121" }
 wat = "1.0"
 parity-wasm = { version = "0.45", default-features = false }
+thiserror = "2.0.16"
 
 [dev-dependencies]
 binaryen = "0.12"
