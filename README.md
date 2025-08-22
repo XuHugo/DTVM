@@ -25,7 +25,7 @@ DTVM introduces:
    * Features small codebase and binary library size compared to competitive Wasm implementations, minimizing potential attack surfaces while maintaining security and efficiency
    * Utilizes modern processor registers and exception handling mechanisms to address specialized requirements such as gas metering and boundary checks in JIT compilation
 
-4. **[SmartCogent](https://zan.top/0x/dtvm-smart-cogent): AI-Powered Smart Contract Development and Auditing**
+4. **[SmartCogent](https://smartcogent.zan.top/): AI-Powered Smart Contract Development and Auditing**
    * Integrates code generation, security auditing, and repair workflows
    * Achieves 80%+ vulnerability detection accuracy and 85%+ automated repair success rates
    * Implements retrieval-augmented generation for smart contract lifecycle automation
@@ -34,7 +34,7 @@ DTVM introduces:
 ![SmartCogent Overflow](./resources/smart_cogent_overflow.png)
 
 
-> For more information about SmartCogent, including an *introduction video* and *detailed documentation*, please visit [SmartCogent website](https://zan.top/0x/dtvm-smart-cogent). 
+> For more information about SmartCogent, including an *introduction video* and *detailed documentation*, please visit [SmartCogent website](https://smartcogent.zan.top/).
 > You can also apply for a *trial license* there to experience SmartCogent's *powerful features* firsthand.
 
 
@@ -52,7 +52,7 @@ ZetaEngine currently supports three execution modes: `lazy-jit` mode (also known
 
 **FLAS Mode**: Function Level Adaptive hot-Switching mode
 
-ZetaEngine provides comprehensive programming interfaces in C++, C, and Rust, enabling seamless integration as both a library and a command-line tool for Wasm execution. 
+ZetaEngine provides comprehensive programming interfaces in C++, C, and Rust, enabling seamless integration as both a library and a command-line tool for Wasm execution.
 Additionally, it offers native support for Intel SGX enclaves, ensuring secure execution in trusted environments.
 
 <a name="teEUv"></a>
@@ -139,13 +139,13 @@ The [DTVM Solidity SDK](https://github.com/DTVMStack/DTVM_SolSDK) enables develo
 ## Command-Line Execution
 Execute a `wasm` file using `dtvm` as follows:
 ```cpp
-dtvm -f add i32.wasm --fargs "2 3"
+dtvm -f add i32.wasm --args "2" "3"
 
 dtvm i32.wasm --repl
 webassembly>add 1 1
 0x2:i32
 
-dtvm --dir . -f add i32.wasm --fargs "3 1"
+dtvm --dir . -f add i32.wasm --args "3" "1"
 0x4:i32
 
 dtvm --mode interpreter i32.wasm
@@ -179,7 +179,7 @@ We welcome interested developers to join us in implementing these features and e
 
 ## Contributing
 
-We welcome contributions to DTVM! Before contributing, please read our [Contributing Guidelines](CONTRIBUTING.md). 
+We welcome contributions to DTVM! Before contributing, please read our [Contributing Guidelines](CONTRIBUTING.md).
 
 <a name="Ry0Ak"></a>
 ## Test
@@ -197,9 +197,9 @@ ctest --verbose
 or
 
 ./build/specUnitTests 0  // interpreter mode
-    
+
 ./build/specUnitTests 1  // singlepass mode
-    
+
 ./build/specUnitTests 2  // multipass mode
 ```
 <a name="GDqeE"></a>

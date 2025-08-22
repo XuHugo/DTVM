@@ -12,6 +12,7 @@
 
 #include "evm/interpreter.h"
 #include "evm_test_helpers.h"
+#include "evm_test_host.hpp"
 #include "evmc/mocked_host.hpp"
 #include "host/evm/crypto.h"
 #include "utils/others.h"
@@ -64,6 +65,7 @@ struct SolcContractData {
 
 struct ContractInstance {
   EVMInstance *Instance;
+  evmc::address Address;
 };
 
 struct SolidityContractTestData {
@@ -72,6 +74,11 @@ struct SolidityContractTestData {
   std::map<std::string, SolcContractData> ContractDataMap;
   std::string MainContract;
   std::vector<std::string> DeployContracts;
+
+  // ConstructorArgs: contract_name -> [("reserved/unused", json_params), ...]
+  // Stores constructor arguments for smart contracts.
+  std::map<std::string, std::vector<std::pair<std::string, std::string>>>
+      ConstructorArgs;
 };
 
 std::map<std::string, SolcContractData>
@@ -228,6 +235,24 @@ std::vector<SolidityContractTestData> getAllSolidityContractTests() {
                 }
               }
             }
+            // Parse the constructor_args and store it in the structure
+            if (Doc.HasMember("constructor_args") &&
+                Doc["constructor_args"].IsObject()) {
+              for (const auto &Entry : Doc["constructor_args"].GetObject()) {
+                std::string ContractName = Entry.name.GetString();
+                if (!Entry.value.IsArray())
+                  continue;
+                std::vector<std::pair<std::string, std::string>> Args;
+                for (const auto &Arg : Entry.value.GetArray()) {
+                  if (Arg.HasMember("type") && Arg["type"].IsString() &&
+                      Arg.HasMember("value") && Arg["value"].IsString()) {
+                    Args.emplace_back(Arg["type"].GetString(),
+                                      Arg["value"].GetString());
+                  }
+                }
+                ContractTest.ConstructorArgs[ContractName] = Args;
+              }
+            }
           }
           File.close();
         }
@@ -248,10 +273,207 @@ std::vector<SolidityContractTestData> getAllSolidityContractTests() {
   return Tests;
 }
 
+struct AbiEncoded {
+  std::string StaticPart;
+  std::string DynamicPart;
+};
+
+static std::string decimalToHex(const std::string &DecimalStr) {
+  std::string TrimmedStr = DecimalStr;
+  zen::utils::trimString(TrimmedStr);
+  if (TrimmedStr.empty() || TrimmedStr == "0") {
+    return "0";
+  }
+  if (TrimmedStr[0] == '-') {
+    ZEN_LOG_ERROR("Negative values are not supported. Value: {}",
+                  DecimalStr.c_str());
+    return "0";
+  }
+  for (char C : TrimmedStr) {
+    if (!std::isdigit(C)) {
+      ZEN_LOG_ERROR(
+          "Invalid decimal string (contains non-digit characters). Value: {}",
+          DecimalStr.c_str());
+      return "0";
+    }
+  }
+  uint64_t Value;
+  try {
+    Value = std::stoull(TrimmedStr);
+  } catch (const std::out_of_range &E) {
+    ZEN_LOG_ERROR("Value exceeds uint64_t range. Value: {}",
+                  DecimalStr.c_str());
+    return "0";
+  } catch (const std::invalid_argument &E) {
+    ZEN_LOG_ERROR("Invalid decimal string (parsing failed). Value: {}",
+                  DecimalStr.c_str());
+    return "0";
+  }
+  std::stringstream S;
+  S << std::uppercase << std::hex << Value;
+  std::string HexStr = S.str();
+  if (HexStr.size() > 64) {
+    ZEN_LOG_ERROR(
+        "Hex value exceeds 64 characters (uint256 max). Length: {}, Value: {}",
+        HexStr.size(), HexStr.c_str());
+    HexStr = HexStr.substr(HexStr.size() - 64);
+  }
+  if (HexStr.size() % 2 != 0) {
+    HexStr = "0" + HexStr;
+  }
+  return HexStr;
+}
+static std::string paddingLeft(const std::string &Input, size_t TargetLength,
+                               char PadChar) {
+  if (Input.size() >= TargetLength) {
+    return Input;
+  }
+  return std::string(TargetLength - Input.size(), PadChar) + Input;
+}
+static std::string padAddressTo32Bytes(const evmc::address &Addr) {
+  return "000000000000000000000000" + zen::utils::toHex(Addr.bytes, 20);
+}
+// Encode the parameters into the Solidity ABI format
+//
+// @param Type  The Solidity type of the parameter. Supported values include:
+//              - "address": Ethereum address (20-byte value)
+//              - "uint256": 256-bit unsigned integer
+//              - "int256": 256-bit signed integer
+//              - "bool": Boolean value (true/false)
+//              - "string": UTF-8 string
+AbiEncoded
+encodeAbiParam(const std::string &Type, const std::string &Value,
+               const std::map<std::string, evmc::address> &DeployedAddrs) {
+
+  if (Type == "address") {
+    std::string Encoded;
+    auto It = DeployedAddrs.find(Value);
+    if (It != DeployedAddrs.end()) {
+      Encoded = padAddressTo32Bytes(It->second);
+    } else {
+      std::string AddrHex =
+          (Value.substr(0, 2) == "0x" || Value.substr(0, 2) == "0X")
+              ? Value.substr(2)
+              : Value;
+      if (AddrHex.size() < 40) {
+        AddrHex = paddingLeft(AddrHex, 40, '0');
+      }
+      Encoded = "000000000000000000000000" + AddrHex;
+    }
+    return {Encoded, ""};
+  }
+  if (Type.substr(0, 4) == "uint") {
+    std::string HexValue;
+    if (Value.substr(0, 2) == "0x" || Value.substr(0, 2) == "0X") {
+      HexValue = Value.substr(2);
+    } else {
+      HexValue = decimalToHex(Value);
+    }
+    size_t FirstNonZero = HexValue.find_first_not_of('0');
+    if (FirstNonZero != std::string::npos) {
+      HexValue = HexValue.substr(FirstNonZero);
+    } else {
+      HexValue = "0";
+    }
+    if (HexValue.size() > 64) {
+      ZEN_LOG_ERROR("Hex value exceeds 64 characters (uint256 max). Length: "
+                    "{}, Value: {}",
+                    HexValue.size(), HexValue.c_str());
+    }
+    std::string Encoded = paddingLeft(HexValue, 64, '0');
+    return {Encoded, ""};
+  }
+  if (Type == "string") {
+    std::string LenStr = std::to_string(Value.size());
+    AbiEncoded LenEncoded = encodeAbiParam("uint256", LenStr, DeployedAddrs);
+    std::string EncodedData = zen::utils::toHex(
+        reinterpret_cast<const uint8_t *>(Value.data()), Value.size());
+    std::string DynamicPart = LenEncoded.StaticPart + EncodedData;
+    std::string StaticPart(64, '0');
+    return {StaticPart, DynamicPart};
+  }
+  // TODO: Unimplemented ABI types: bool, bytes, arrays, nested dynamic types,
+  // etc.
+  ZEN_ASSERT_TODO();
+  return {"", ""};
+}
+std::string encodeAbiOffset(uint64_t Offset) {
+  uint8_t OffsetBytes[8] = {0};
+  for (int I = 7; I >= 0; --I) {
+    OffsetBytes[I] = static_cast<uint8_t>(Offset & 0xFF);
+    Offset >>= 8;
+  }
+  std::string HexStr = zen::utils::toHex(OffsetBytes, 8);
+  if (HexStr.size() < 64) {
+    HexStr = paddingLeft(HexStr, 64, '0');
+  }
+  std::transform(HexStr.begin(), HexStr.end(), HexStr.begin(), ::tolower);
+  return HexStr;
+}
+std::string encodeConstructorParams(
+    const std::vector<std::pair<std::string, std::string>> &CtorArgs,
+    const std::map<std::string, evmc::address> &DeployedAddrs) {
+  std::vector<AbiEncoded> EncodedParams;
+  for (size_t I = 0; I < CtorArgs.size(); ++I) {
+    const auto &[Type, Value] = CtorArgs[I];
+    EncodedParams.push_back(encodeAbiParam(Type, Value, DeployedAddrs));
+  }
+  std::string StaticData;
+  std::string DynamicData;
+  for (size_t I = 0; I < EncodedParams.size(); ++I) {
+    StaticData += EncodedParams[I].StaticPart;
+    DynamicData += EncodedParams[I].DynamicPart;
+  }
+
+  size_t StaticTotalBytes = StaticData.size() / 2;
+  size_t CurrentOffset = StaticTotalBytes;
+
+  std::string FinalStaticData = StaticData;
+  size_t Pos = 0;
+  for (size_t I = 0; I < EncodedParams.size(); ++I) {
+    const auto &Enc = EncodedParams[I];
+    size_t ParamStaticLen = Enc.StaticPart.size();
+
+    if (!Enc.DynamicPart.empty()) {
+      std::string OffsetHex = encodeAbiOffset(CurrentOffset);
+      FinalStaticData.replace(Pos, ParamStaticLen, OffsetHex);
+      CurrentOffset += Enc.DynamicPart.size() / 2;
+    }
+    Pos += ParamStaticLen;
+  }
+  return FinalStaticData + DynamicData;
+}
+// Detect whether it is the bytecode of a library contract (starting with 20
+// consecutive zeros after the byte 73)
+bool isLibraryBytecode(const std::string &Hex) {
+  // Library contract placeholder feature: The first 42 characters are "73"
+  // followed by 40 zeros (20 bytes all zeros)
+  return Hex.size() >= 42 && Hex.substr(0, 2) == "73" // PUSH20 opcode
+         && Hex.substr(2, 40) == std::string(40, '0');
+}
+
+// Tool function: Replace placeholders in the library contract with actual
+// addresses
+std::string replaceLibraryPlaceholder(const std::string &ExpectedHex,
+                                      const std::string &ActualHex) {
+  if (ExpectedHex.size() < 42 || ActualHex.size() < 42) {
+    return ExpectedHex; // Insufficient length, no processing
+  }
+  std::string ActualAddress = ActualHex.substr(2, 40);
+  return "73" + ActualAddress + ExpectedHex.substr(42);
+}
+
 } // namespace
 
 class SolidityContractTest
-    : public testing::TestWithParam<SolidityContractTestData> {};
+    : public testing::TestWithParam<SolidityContractTestData> {
+protected:
+  static void SetUpTestCase() {
+    auto logger = zen::utils::createConsoleLogger(
+        "evm_solidity_test_logger", zen::utils::LoggerLevel::Debug);
+    zen::setGlobalLogger(logger);
+  }
+};
 
 TEST_P(SolidityContractTest, ExecuteContractSequence) {
   const auto &ContractTest = GetParam();
@@ -264,14 +486,41 @@ TEST_P(SolidityContractTest, ExecuteContractSequence) {
 
   RuntimeConfig Config;
   Config.Mode = common::RunMode::InterpMode;
-  std::unique_ptr<evmc::Host> Host = std::make_unique<evmc::MockedHost>();
-  auto RT = Runtime::newEVMRuntime(Config, Host.get());
+  // Create temporary MockedHost first for Runtime creation
+  auto TempMockedHost = std::make_unique<evmc::MockedHost>();
+  auto RT = Runtime::newEVMRuntime(Config, TempMockedHost.get());
   ASSERT_TRUE(RT != nullptr) << "Failed to create runtime";
+
+  // Create Isolation for recursive host
+  Isolation *IsoForRecursive = RT->createManagedIsolation();
+  ASSERT_TRUE(IsoForRecursive != nullptr)
+      << "Failed to create Isolation for recursive host";
+  // Now create ZenMockedEVMHost with Runtime and Isolation references
+  auto HostPtr = std::make_unique<ZenMockedEVMHost>(RT.get(), IsoForRecursive);
+  ZenMockedEVMHost *MockedHost = HostPtr.get();
+
+  // Copy accounts and context from temporary host
+  MockedHost->accounts = TempMockedHost->accounts;
+  MockedHost->tx_context = TempMockedHost->tx_context;
+
+  // Switch to using ZenMockedEVMHost
+  std::unique_ptr<evmc::Host> Host = std::move(HostPtr);
+
+  uint8_t DeployerBytes[20] = {0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                               0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                               0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  evmc::address DeployerAddr;
+  std::copy(std::begin(DeployerBytes), std::end(DeployerBytes),
+            DeployerAddr.bytes);
+  auto &DeployerAccount = MockedHost->accounts[DeployerAddr];
+  DeployerAccount.nonce = 0;
+  DeployerAccount.set_balance(100000000UL);
 
   uint64_t GasLimit = 100000000UL;
   std::map<std::string, ContractInstance> DeployedContracts;
 
   // Step 1: Deploy all specified contracts
+  std::map<std::string, evmc::address> DeployedAddresses;
   for (const std::string &NowContractName : ContractTest.DeployContracts) {
     auto ContractIt = ContractTest.ContractDataMap.find(NowContractName);
     ASSERT_NE(ContractIt, ContractTest.ContractDataMap.end())
@@ -279,18 +528,28 @@ TEST_P(SolidityContractTest, ExecuteContractSequence) {
 
     const auto &[ContractAddress, ContractData] = *ContractIt;
 
+    std::vector<std::pair<std::string, std::string>> Ctorargs;
+    auto ArgsIt = ContractTest.ConstructorArgs.find(NowContractName);
+    if (ArgsIt != ContractTest.ConstructorArgs.end()) {
+      Ctorargs = ArgsIt->second;
+    }
+
+    // Concatenation of deployed bytecode + constructor parameters
+    std::string DeployHex =
+        ContractData.DeployBytecode +
+        encodeConstructorParams(Ctorargs, DeployedAddresses);
+
     if (Debug)
       std::cout << "Deploying contract: " << NowContractName << std::endl;
 
     ASSERT_FALSE(ContractData.DeployBytecode.empty())
         << "Deploy bytecode is empty for " << NowContractName;
 
-    auto DeployBytecode = utils::fromHex(ContractData.DeployBytecode);
+    auto DeployBytecode = utils::fromHex(DeployHex);
     ASSERT_TRUE(DeployBytecode) << "Failed to convert deploy hex to bytecode";
 
     TempHexFile TempDeployFile(ContractTest.ContractPath,
-                               "temp_deploy_" + NowContractName,
-                               ContractData.DeployBytecode);
+                               "temp_deploy_" + NowContractName, DeployHex);
 
     auto DeployModRet = RT->loadEVMModule(TempDeployFile.getPath());
     ASSERT_TRUE(DeployModRet)
@@ -309,13 +568,21 @@ TEST_P(SolidityContractTest, ExecuteContractSequence) {
     InterpreterExecContext DeployCtx(DeployInst);
     BaseInterpreter DeployInterpreter(DeployCtx);
 
+    evmc::address NewContractAddr =
+        MockedHost->computeCreateAddress(DeployerAddr, DeployerAccount.nonce);
+
     evmc_message Msg = {
         .kind = EVMC_CREATE,
         .flags = 0,
         .depth = 0,
         .gas = (long)GasLimit,
+        .recipient = NewContractAddr,
+        .sender = DeployerAddr,
     };
     DeployCtx.allocFrame(&Msg);
+    // Set the host for the execution frame
+    auto *Frame = DeployCtx.getCurFrame();
+    Frame->Host = MockedHost;
 
     EXPECT_NO_THROW({ DeployInterpreter.interpret(); })
         << "Deploy failed for " << NowContractName;
@@ -332,8 +599,12 @@ TEST_P(SolidityContractTest, ExecuteContractSequence) {
       std::cout << "Expected runtime bytecode: " << ContractData.RuntimeBytecode
                 << std::endl;
     }
-
-    ASSERT_TRUE(hexEquals(DeployResultHex, ContractData.RuntimeBytecode))
+    std::string AdjustedRuntimeBytecode = ContractData.RuntimeBytecode;
+    if (isLibraryBytecode(AdjustedRuntimeBytecode)) {
+      AdjustedRuntimeBytecode =
+          replaceLibraryPlaceholder(AdjustedRuntimeBytecode, DeployResultHex);
+    }
+    ASSERT_TRUE(hexEquals(DeployResultHex, AdjustedRuntimeBytecode))
         << "Deploy result does not match runtime bytecode for "
         << NowContractName;
 
@@ -356,7 +627,21 @@ TEST_P(SolidityContractTest, ExecuteContractSequence) {
 
     EVMInstance *CallInst = *CallInstRet;
 
-    DeployedContracts[NowContractName] = {CallInst};
+    DeployedContracts[NowContractName] = {CallInst, NewContractAddr};
+    auto &NewContractAccount = MockedHost->accounts[NewContractAddr];
+    NewContractAccount.code =
+        std::basic_string<uint8_t, evmc::byte_traits<uint8_t>>(
+            DeployResult.begin(), DeployResult.end());
+
+    const std::vector<uint8_t> CodeHashVec =
+        host::evm::crypto::keccak256(DeployResult);
+    assert(CodeHashVec.size() == 32 && "Keccak256 hash must be 32 bytes");
+    evmc::bytes32 CodeHash;
+    std::memcpy(CodeHash.bytes, CodeHashVec.data(), 32);
+    NewContractAccount.codehash = CodeHash;
+    NewContractAccount.nonce = 1;
+    DeployerAccount.nonce += 1;
+    DeployedAddresses[NowContractName] = NewContractAddr;
 
     if (Debug)
       std::cout << "✓ Contract " << NowContractName << " deployed successfully"
@@ -390,10 +675,15 @@ TEST_P(SolidityContractTest, ExecuteContractSequence) {
         .flags = 0,
         .depth = 0,
         .gas = (long)GasLimit,
+        .recipient = ContractInstance.Address,
+        .sender = DeployerAddr,
         .input_data = Calldata->data(),
         .input_size = Calldata->size(),
     };
     CallCtx.allocFrame(&Msg);
+    // Set the host for the execution frame
+    auto *Frame = CallCtx.getCurFrame();
+    Frame->Host = MockedHost;
 
     BaseInterpreter CallInterpreter(CallCtx);
     EXPECT_NO_THROW({ CallInterpreter.interpret(); })
@@ -442,6 +732,6 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::ValuesIn(
         SolidityTests.empty()
             ? std::vector<SolidityContractTestData>{{SolidityContractTestData{
-                  "dummy_empty_test", {}, {}, "dummy", {}}}}
+                  "dummy_empty_test", {}, {}, "dummy", {}, {}}}}
             : SolidityTests),
     SolidityTestNameGenerator{});
