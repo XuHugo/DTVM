@@ -6,9 +6,11 @@
 
 #include "common/errors.h"
 #include "common/traphandler.h"
+#include "evmc/evmc.hpp"
 #include "intx/intx.hpp"
 #include "runtime/evm_module.h"
 #include "utils/backtrace.h"
+#include <unordered_map>
 #include <vector>
 
 // Forward declaration for evmc_message
@@ -61,12 +63,22 @@ public:
 
   void pushMessage(const evmc_message *Msg) { MessageStack.push_back(Msg); }
   void popMessage() {
-    if (!MessageStack.empty())
+    if (!MessageStack.empty()) {
       MessageStack.pop_back();
+    }
   }
   const evmc_message *getCurrentMessage() const {
     return MessageStack.empty() ? nullptr : MessageStack.back();
   }
+
+  struct ExecutionCache {
+    evmc_tx_context tx_context;
+    std::unordered_map<int64_t, evmc::bytes32> block_hashes;
+    std::unordered_map<uint64_t, evmc::bytes32> blob_hashes;
+    bool tx_context_cached = false;
+  };
+
+  ExecutionCache &getMessageCache() { return execution_cache; }
 
 private:
   EVMInstance(const EVMModule &M, Runtime &RT)
@@ -86,6 +98,9 @@ private:
 
   // Message stack for call hierarchy tracking
   std::vector<const evmc_message *> MessageStack;
+
+  // Instance-level cache storage (shared across all messages in execution)
+  ExecutionCache execution_cache;
 
   // exit code set by Instance.exit(ExitCode)
   int32_t InstanceExitCode = 0;

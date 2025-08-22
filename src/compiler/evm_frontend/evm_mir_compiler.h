@@ -17,6 +17,8 @@ struct RuntimeFunctions;
 using U256Fn = intx::uint256 (*)(zen::runtime::EVMInstance *);
 using Bytes32Fn = const uint8_t *(*)(zen::runtime::EVMInstance *);
 using SizeFn = uint64_t (*)(zen::runtime::EVMInstance *);
+using BlockHashFn = const uint8_t *(*)(zen::runtime::EVMInstance *, int64_t);
+using BlobHashFn = const uint8_t *(*)(zen::runtime::EVMInstance *, uint64_t);
 } // namespace COMPILER
 
 namespace zen::runtime {
@@ -283,6 +285,17 @@ public:
   Operand handleGasPrice();
   Operand handleCallDataSize();
   Operand handleCodeSize();
+  Operand handleBlockHash();
+  Operand handleCoinBase();
+  Operand handleTimestamp();
+  Operand handleNumber();
+  Operand handlePrevRandao();
+  Operand handleGasLimit();
+  Operand handleChainId();
+  Operand handleSelfBalance();
+  Operand handleBaseFee();
+  Operand handleBlobHash();
+  Operand handleBlobBaseFee();
 
   // ==================== Runtime Interface for JIT ====================
 
@@ -407,6 +420,9 @@ private:
   Operand callRuntimeForU256(U256Fn RuntimeFunc);
   Operand callRuntimeForBytes32(Bytes32Fn RuntimeFunc);
   Operand callRuntimeForSize(SizeFn RuntimeFunc);
+  Operand callRuntimeForBlockHash(BlockHashFn RuntimeFunc,
+                                  const Operand &BlockNumber);
+  Operand callRuntimeForBlobHash(BlobHashFn RuntimeFunc, const Operand &Index);
 
   Operand convertSingleInstrToU256Operand(MInstruction *SingleInstr);
   Operand convertU256InstrToU256Operand(MInstruction *U256Instr);
