@@ -7,8 +7,8 @@
 //! such as call data, gas information, and transaction properties.
 
 use crate::core::instance::ZenInstance;
-use crate::evm::traits::EvmContext;
-use crate::evm::memory::{MemoryAccessor, validate_data_param, validate_bytes32_param};
+use crate::evm::traits::EvmHost;
+use crate::evm::utils::{MemoryAccessor, validate_data_param, validate_bytes32_param};
 use crate::evm::error::HostFunctionResult;
 use crate::{host_info, host_error};
 
@@ -22,10 +22,10 @@ use crate::{host_info, host_error};
 /// - The size of the call data as i32
 pub fn get_call_data_size<T>(instance: &ZenInstance<T>) -> i32
 where
-    T: EvmContext,
+    T: EvmHost,
 {
-    let context = &instance.extra_ctx;
-    let call_data_size = context.get_call_data_size();
+    let evmhost = &instance.extra_ctx;
+    let call_data_size = evmhost.get_call_data_size();
     
     host_info!("get_call_data_size called, returning: {}", call_data_size);
     call_data_size
@@ -49,7 +49,7 @@ pub fn call_data_copy<T>(
     length: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!(
         "call_data_copy called: result_offset={}, data_offset={}, length={}",
@@ -58,7 +58,7 @@ where
         length
     );
 
-    let context = &instance.extra_ctx;
+    let evmhost = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate parameters
@@ -75,9 +75,9 @@ where
     // Create buffer with the exact requested length, initialized with zeros
     let mut buffer = vec![0u8; length_u32 as usize];
     
-    // Copy call data using the context's copy_call_data method
+    // Copy call data using the evmhost's copy_call_data method
     // This method handles bounds checking and zero-filling automatically
-    let copied_bytes = context.copy_call_data(&mut buffer, data_offset as usize, length_u32 as usize);
+    let copied_bytes = evmhost.copy_call_data(&mut buffer, data_offset as usize, length_u32 as usize);
     
     // Write the entire buffer to memory (including any zero-filled portions)
     // This ensures we always write exactly 'length' bytes as requested
@@ -105,11 +105,11 @@ where
 /// - The remaining gas as i64
 pub fn get_gas_left<T>(instance: &ZenInstance<T>) -> i64
 where
-    T: EvmContext,
+    T: EvmHost,
 {
-    //let _context = &instance.extra_ctx;
+    //let _evmhost = &instance.extra_ctx;
     let gas_left = instance.get_gas_left();
-    //let gas_left = context.get_gas_left();
+    //let gas_left = evmhost.get_gas_left();
     
     host_info!("get_gas_left called, returning: {}", gas_left);
     gas_left as i64
@@ -126,18 +126,18 @@ pub fn get_tx_gas_price<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!("get_tx_gas_price called: result_offset={}", result_offset);
 
-    let context = &instance.extra_ctx;
+    let evmhost = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate the result offset
     let offset = validate_bytes32_param(instance, result_offset)?;
 
     // Get the gas price from transaction info
-    let gas_price = context.get_tx_gas_price();
+    let gas_price = evmhost.get_tx_gas_price();
 
     // Write the gas price to memory
     memory.write_bytes32(offset, gas_price).map_err(|e| {

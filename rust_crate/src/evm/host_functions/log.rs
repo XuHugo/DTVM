@@ -4,10 +4,9 @@
 //! Logging and event host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::traits::{EvmContext, LogEvent};
-use crate::evm::memory::{MemoryAccessor, validate_data_param, validate_bytes32_param};
+use crate::evm::traits::{EvmHost, LogEvent};
+use crate::evm::utils::{MemoryAccessor, validate_data_param, validate_bytes32_param, format_hex};
 use crate::evm::error::HostFunctionResult;
-use crate::evm::debug::format_hex;
 use crate::{host_info, host_error};
 
 /// Emit a log event (LOG0, LOG1, LOG2, LOG3, LOG4 opcodes)
@@ -33,7 +32,7 @@ pub fn emit_log_event<T>(
     topic4_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!(
         "emit_log_event called: data_offset={}, length={}, num_topics={}, topics=[{}, {}, {}, {}]",
@@ -47,7 +46,7 @@ where
     );
 
     let memory = MemoryAccessor::new(instance);
-    let context = &instance.extra_ctx;
+    let evmhost = &instance.extra_ctx;
 
     // Validate number of topics
     if num_topics < 0 || num_topics > 4 {
@@ -91,7 +90,7 @@ where
     }
 
     // Get the current contract address for the log
-    let contract_address = context.get_address();
+    let contract_address = evmhost.get_address();
 
     // Create the log event
     let log_event = LogEvent {
@@ -100,8 +99,8 @@ where
         topics: topics.clone(),
     };
 
-    // Store the event in the context (this is the key addition!)
-    context.emit_event(log_event);
+    // Store the event in the evmhost (this is the key addition!)
+    evmhost.emit_event(log_event);
 
     // Display the log event for debugging
     host_info!("=== LOG EVENT EMITTED ===");
@@ -119,7 +118,7 @@ where
         "emit_log_event completed: emitted log with {} bytes of data and {} topics, total events: {}",
         log_data.len(),
         num_topics,
-        context.get_events().len()
+        evmhost.get_events().len()
     );
 
     Ok(())
@@ -138,7 +137,7 @@ pub fn emit_log0<T>(
     length: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     emit_log_event(instance, data_offset, length, 0, 0, 0, 0, 0)
 }
@@ -158,7 +157,7 @@ pub fn emit_log1<T>(
     topic1_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     emit_log_event(instance, data_offset, length, 1, topic1_offset, 0, 0, 0)
 }
@@ -180,7 +179,7 @@ pub fn emit_log2<T>(
     topic2_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     emit_log_event(instance, data_offset, length, 2, topic1_offset, topic2_offset, 0, 0)
 }
@@ -204,7 +203,7 @@ pub fn emit_log3<T>(
     topic3_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     emit_log_event(instance, data_offset, length, 3, topic1_offset, topic2_offset, topic3_offset, 0)
 }
@@ -230,7 +229,7 @@ pub fn emit_log4<T>(
     topic4_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     emit_log_event(instance, data_offset, length, 4, topic1_offset, topic2_offset, topic3_offset, topic4_offset)
 }
@@ -314,7 +313,7 @@ mod tests {
 
     #[test]
     fn test_log_event_storage() {
-        // Test that events are properly stored in MockContext
+        // Test that events are properly stored in Mockevmhost
         // Test event retrieval and filtering
         // Test event count and clearing
     }

@@ -8,7 +8,7 @@
 use crate::evm_bridge::create_complete_evm_host_functions;
 use crate::mock_context::MockContext;
 use dtvmcore_rust::core::runtime::ZenRuntime;
-use dtvmcore_rust::evm::EvmContext;
+use dtvmcore_rust::evm::EvmHost;
 use std::rc::Rc;
 
 /// 合约执行结果

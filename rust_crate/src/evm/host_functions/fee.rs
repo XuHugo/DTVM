@@ -7,8 +7,8 @@
 //! such as base fee and blob base fee (EIP-4844).
 
 use crate::core::instance::ZenInstance;
-use crate::evm::traits::EvmContext;
-use crate::evm::memory::{MemoryAccessor, validate_bytes32_param};
+use crate::evm::traits::EvmHost;
+use crate::evm::utils::{MemoryAccessor, validate_bytes32_param};
 use crate::evm::error::HostFunctionResult;
 use crate::{host_info, host_error};
 
@@ -23,18 +23,18 @@ pub fn get_base_fee<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!("get_base_fee called: result_offset={}", result_offset);
 
-    let context = &instance.extra_ctx;
+    let evmhost = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate the result offset
     let offset = validate_bytes32_param(instance, result_offset)?;
 
     // Get the base fee from block info
-    let base_fee = context.get_base_fee();
+    let base_fee = evmhost.get_base_fee();
 
     // Write the base fee to memory
     memory.write_bytes32(offset, base_fee).map_err(|e| {
@@ -57,18 +57,18 @@ pub fn get_blob_base_fee<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!("get_blob_base_fee called: result_offset={}", result_offset);
 
-    let context = &instance.extra_ctx;
+    let evmhost = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate the result offset
     let offset = validate_bytes32_param(instance, result_offset)?;
 
     // Get the blob base fee from block info
-    let blob_base_fee = context.get_blob_base_fee();
+    let blob_base_fee = evmhost.get_blob_base_fee();
 
     // Write the blob base fee to memory
     memory.write_bytes32(offset, blob_base_fee).map_err(|e| {

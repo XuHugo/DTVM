@@ -37,8 +37,8 @@
 //! ```
 
 use crate::core::instance::ZenInstance;
-use crate::evm::traits::EvmContext;
-use crate::evm::memory::MemoryAccessor;
+use crate::evm::traits::EvmHost;
+use crate::evm::utils::MemoryAccessor;
 use crate::evm::error::HostFunctionResult;
 use crate::{host_info, host_error};
 
@@ -55,12 +55,12 @@ pub fn storage_store<T>(
     value_bytes_offset: i32
 ) -> HostFunctionResult<()> 
 where 
-    T: EvmContext
+    T: EvmHost
 {
     host_info!("storage_store called: key_offset={}, value_offset={}", key_bytes_offset, value_bytes_offset);
     
-    // Get the MockContext from the instance
-    let context = &instance.extra_ctx;
+    // Get the Mockevmhost from the instance
+    let evmhost = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate and read the storage key (32 bytes)
@@ -77,14 +77,11 @@ where
             e
         })?;
     
-    // Convert key to hex string for storage
-    let key_hex = format!("0x{}", hex::encode(&key_bytes));
-    
-    // Store the value in the context
-    context.set_storage_bytes32(&key_hex, value_bytes);
+    // Store the value in the evmhost using EVMC-compatible method
+    evmhost.storage_store(&key_bytes, &value_bytes);
     
     host_info!("    📦 Stored value: 0x{}", hex::encode(&value_bytes));
-    host_info!("Storage store completed: key={}, value_len=32", key_hex);
+    host_info!("Storage store completed: key=0x{}, value_len=32", hex::encode(&key_bytes));
     Ok(())
 }
 
@@ -101,12 +98,12 @@ pub fn storage_load<T>(
     result_offset: i32
 ) -> HostFunctionResult<()>
 where 
-    T: EvmContext
+    T: EvmHost
 {
     host_info!("storage_load called: key_offset={}, result_offset={}", key_bytes_offset, result_offset);
     
-    // Get the MockContext from the instance
-    let context = &instance.extra_ctx;
+    // Get the Mockevmhost from the instance
+    let evmhost = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
     
     // Validate and read the storage key (32 bytes)
@@ -116,11 +113,8 @@ where
             e
         })?;
     
-    // Convert key to hex string for storage lookup
-    let key_hex = format!("0x{}", hex::encode(&key_bytes));
-    
-    // Load the value from storage
-    let value_bytes = context.get_storage_bytes32(&key_hex);
+    // Load the value from storage using EVMC-compatible method
+    let value_bytes = evmhost.storage_load(&key_bytes);
     
     host_info!("    📤 Loaded value: 0x{}", hex::encode(&value_bytes));
     
@@ -131,7 +125,7 @@ where
             e
         })?;
     
-    host_info!("Storage load completed: key={}, value_len=32", key_hex);
+    host_info!("Storage load completed: key=0x{}, value_len=32", hex::encode(&key_bytes));
     Ok(())
 }
 

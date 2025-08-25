@@ -4,10 +4,9 @@
 //! Mathematical operation host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::traits::EvmContext;
-use crate::evm::memory::{MemoryAccessor, validate_bytes32_param};
+use crate::evm::traits::EvmHost;
+use crate::evm::utils::{MemoryAccessor, validate_bytes32_param, format_hex};
 use crate::evm::error::HostFunctionResult;
-use crate::evm::debug::format_hex;
 use crate::{host_info, host_error};
 use num_bigint::BigUint;
 use num_traits::{Zero, One};
@@ -29,7 +28,7 @@ pub fn addmod<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!(
         "addmod called: a_offset={}, b_offset={}, n_offset={}, result_offset={}",
@@ -110,7 +109,7 @@ pub fn mulmod<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!(
         "mulmod called: a_offset={}, b_offset={}, n_offset={}, result_offset={}",
@@ -191,7 +190,7 @@ pub fn expmod<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!(
         "expmod called: base_offset={}, exp_offset={}, mod_offset={}, result_offset={}",

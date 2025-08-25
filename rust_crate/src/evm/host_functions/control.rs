@@ -5,8 +5,8 @@
 
 use crate::core::instance::ZenInstance;
 use crate::evm::error::HostFunctionResult;
-use crate::evm::memory::{validate_address_param, validate_data_param, MemoryAccessor};
-use crate::evm::traits::EvmContext;
+use crate::evm::utils::{validate_address_param, validate_data_param, MemoryAccessor};
+use crate::evm::traits::EvmHost;
 use crate::{host_error, host_info, host_warn};
 
 /// Finish execution and return data (RETURN opcode)
@@ -20,7 +20,7 @@ use crate::{host_error, host_info, host_warn};
 /// Note: This function should cause the WASM execution to terminate
 pub fn finish<T>(instance: &ZenInstance<T>, data_offset: i32, length: i32) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!(
         "finish called: data_offset={}, length={}",
@@ -51,12 +51,12 @@ where
         return_data.len()
     );
 
-    // Store the return data in the MockContext so it can be accessed externally
-    let context = &instance.extra_ctx;
-    context.set_return_data(return_data.clone());
+    // Store the return data in the Mockevmhost so it can be accessed externally
+    let evmhost = &instance.extra_ctx;
+    evmhost.set_return_data(return_data.clone());
 
     host_info!(
-        "finish: return data stored in context, hex: 0x{}",
+        "finish: return data stored in evmhost, hex: 0x{}",
         hex::encode(&return_data)
     );
 
@@ -79,7 +79,7 @@ where
 /// Note: This function should cause the WASM execution to terminate with revert
 pub fn revert<T>(instance: &ZenInstance<T>, data_offset: i32, length: i32) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!(
         "revert called: data_offset={}, length={}",
@@ -110,12 +110,12 @@ where
         revert_data.len()
     );
 
-    // Store the revert data in the MockContext so it can be accessed externally
-    let context = &instance.extra_ctx;
-    context.set_reverted(revert_data.clone());
+    // Store the revert data in the Mockevmhost so it can be accessed externally
+    let evmhost = &instance.extra_ctx;
+    evmhost.set_reverted(revert_data.clone());
 
     host_info!(
-        "revert: revert data stored in context, hex: 0x{}",
+        "revert: revert data stored in evmhost, hex: 0x{}",
         hex::encode(&revert_data)
     );
 
@@ -136,15 +136,15 @@ where
 /// Note: This function should cause the WASM execution to terminate with error
 pub fn invalid<T>(instance: &ZenInstance<T>) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!("invalid called");
 
     host_error!("invalid: EVM invalid operation encountered");
 
-    // Store the revert data in the MockContext so it can be accessed externally
-    let context = &instance.extra_ctx;
-    context.set_reverted(vec![1, 2, 3, 4, 5, 6]);
+    // Store the revert data in the Mockevmhost so it can be accessed externally
+    let evmhost = &instance.extra_ctx;
+    evmhost.set_reverted(vec![1, 2, 3, 4, 5, 6]);
 
     // Invalid operation - exit with code 2 (invalid operation)
     host_error!("invalid: invalid EVM operation, exiting with code 2");
@@ -164,11 +164,11 @@ where
 /// Note: This function should cause the WASM execution to terminate
 pub fn self_destruct<T>(instance: &ZenInstance<T>, addr_offset: i32) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!("self_destruct called: addr_offset={}", addr_offset);
 
-    let context = &instance.extra_ctx;
+    let evmhost = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate the address parameter
@@ -189,8 +189,8 @@ where
         hex::encode(&recipient_address)
     );
 
-    // Perform the self-destruct operation - let the context handle the details
-    let transferred_balance = context.self_destruct(&recipient_address);
+    // Perform the self-destruct operation - let the evmhost handle the details
+    let transferred_balance = evmhost.self_destruct(&recipient_address);
     let transferred_amount = u64::from_be_bytes([
         transferred_balance[24],
         transferred_balance[25],
@@ -229,10 +229,10 @@ where
 /// - The size of the return data as i32
 pub fn get_return_data_size<T>(instance: &ZenInstance<T>) -> i32
 where
-    T: EvmContext,
+    T: EvmHost,
 {
-    let context = &instance.extra_ctx;
-    let return_data_size = context.get_return_data_size() as i32;
+    let evmhost = &instance.extra_ctx;
+    let return_data_size = evmhost.get_return_data_size() as i32;
 
     host_info!(
         "get_return_data_size called, returning: {} bytes",
@@ -259,7 +259,7 @@ pub fn return_data_copy<T>(
     length: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!(
         "return_data_copy called: result_offset={}, data_offset={}, length={}",
@@ -268,7 +268,7 @@ where
         length
     );
 
-    let context = &instance.extra_ctx;
+    let evmhost = &instance.extra_ctx;
     let memory = MemoryAccessor::new(instance);
 
     // Validate parameters
@@ -282,8 +282,8 @@ where
         ));
     }
 
-    // Get the return data from the context
-    let return_data = context.get_return_data();
+    // Get the return data from the evmhost
+    let return_data = evmhost.get_return_data();
     let data_offset_usize = data_offset as usize;
 
     host_info!("    📤 Available return data: {} bytes", return_data.len());

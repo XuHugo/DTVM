@@ -7,9 +7,8 @@
 //! for testing and development purposes in a WASM environment.
 
 pub mod host_functions;
-pub mod memory;
+pub mod utils;
 pub mod error;
-pub mod debug;
 pub mod traits;
 
 //#[cfg(test)]
@@ -18,5 +17,5 @@ pub mod traits;
 // Re-export main types for convenience
 pub use host_functions::*;
 pub use error::{HostFunctionError, HostFunctionResult};
-pub use memory::MemoryAccessor;
+pub use utils::{MemoryAccessor, format_hex, init_logging};
 pub use traits::*;

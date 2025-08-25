@@ -44,10 +44,9 @@
 //! ```
 
 use crate::core::instance::ZenInstance;
-use crate::evm::traits::EvmContext;
-use crate::evm::memory::{MemoryAccessor, validate_bytes32_param, validate_data_param};
+use crate::evm::traits::EvmHost;
+use crate::evm::utils::{MemoryAccessor, validate_bytes32_param, validate_data_param, format_hex};
 use crate::evm::error::HostFunctionResult;
-use crate::evm::debug::format_hex;
 use crate::{host_info, host_error};
 use sha2::{Sha256, Digest};
 use sha3::Keccak256;
@@ -70,7 +69,7 @@ pub fn sha256<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!(
         "sha256 called: input_offset={}, input_length={}, result_offset={}",
@@ -143,7 +142,7 @@ pub fn keccak256<T>(
     result_offset: i32,
 ) -> HostFunctionResult<()>
 where
-    T: EvmContext,
+    T: EvmHost,
 {
     host_info!(
         "keccak256 called: input_offset={}, input_length={}, result_offset={}",

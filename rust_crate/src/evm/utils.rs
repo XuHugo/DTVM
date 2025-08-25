@@ -1,35 +1,36 @@
 // Copyright (C) 2021-2025 the DTVM authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Memory Access Utilities for EVM Host Functions
+//! EVM Utilities - Memory Access and Debug Tools
 //!
-//! This module provides safe and efficient memory access utilities for WASM memory operations
-//! in EVM host functions. It includes bounds checking, validation, and debugging support
-//! to prevent memory safety issues.
+//! This module provides essential utilities for EVM host function development,
+//! combining memory access operations with debugging and logging capabilities.
 //!
 //! # Key Features
 //!
+//! ## Memory Access
 //! - **Bounds Checking** - All memory access operations include comprehensive bounds validation
 //! - **Type Safety** - Generic implementations with proper type constraints
 //! - **Error Handling** - Detailed error reporting for memory access failures
-//! - **Debug Support** - Memory access logging and debugging utilities
 //! - **Performance** - Optimized for frequent memory operations
+//!
+//! ## Debug and Logging
+//! - **Structured Logging** - Multi-level logging with context information
+//! - **Memory Debugging** - Hex formatting utilities for memory data
+//! - **Function Tracing** - Parameter logging and execution flow tracking
+//! - **Error Context** - Rich error information with debug details
 //!
 //! # Usage
 //!
 //! ```rust
-//! use dtvmcore_rust::evm::memory::MemoryAccessor;
+//! use dtvmcore_rust::evm::utils::{MemoryAccessor, format_hex};
 //!
-//! // Create memory accessor from WASM instance
+//! // Memory access with bounds checking
 //! let accessor = MemoryAccessor::new(&instance);
+//! let data = accessor.read_bytes32(0x1000)?;
 //!
-//! // Read data with bounds checking
-//! let mut buffer = vec![0u8; 32];
-//! accessor.read_bytes(0x1000, &mut buffer)?;
-//!
-//! // Write data with validation
-//! let data = vec![0x42; 32];
-//! accessor.write_bytes(0x2000, &data)?;
+//! // Debug formatting
+//! println!("Data: 0x{}", format_hex(&data));
 //! ```
 //!
 //! # Safety
@@ -41,8 +42,102 @@
 //! - Memory corruption
 
 use crate::core::instance::ZenInstance;
-use crate::evm::error::{HostFunctionResult, out_of_bounds_error};
+use crate::evm::error::{out_of_bounds_error, HostFunctionResult};
 use crate::host_debug;
+
+// ============================================================================
+// Debug and Logging Macros
+// ============================================================================
+
+/// Debug macro for host function calls
+/// Only prints in debug builds to avoid performance impact in release
+#[macro_export]
+macro_rules! host_debug {
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        {
+            println!("[HOST] {}", format!($($arg)*));
+        }
+    };
+}
+
+/// Info macro for important host function events
+#[cfg(feature = "logging")]
+#[macro_export]
+macro_rules! host_info {
+    ($($arg:tt)*) => {
+        log::info!("[HOST] {}", format!($($arg)*));
+    };
+}
+
+/// Info macro for important host function events (no-op when logging disabled)
+#[cfg(not(feature = "logging"))]
+#[macro_export]
+macro_rules! host_info {
+    ($($arg:tt)*) => {};
+}
+
+/// Warning macro for host function warnings
+#[cfg(feature = "logging")]
+#[macro_export]
+macro_rules! host_warn {
+    ($($arg:tt)*) => {
+        log::warn!("[HOST] {}", format!($($arg)*));
+    };
+}
+
+/// Warning macro for host function warnings (no-op when logging disabled)
+#[cfg(not(feature = "logging"))]
+#[macro_export]
+macro_rules! host_warn {
+    ($($arg:tt)*) => {};
+}
+
+/// Error macro for host function errors
+#[cfg(feature = "logging")]
+#[macro_export]
+macro_rules! host_error {
+    ($($arg:tt)*) => {
+        log::error!("[HOST] {}", format!($($arg)*));
+    };
+}
+
+/// Error macro for host function errors (no-op when logging disabled)
+#[cfg(not(feature = "logging"))]
+#[macro_export]
+macro_rules! host_error {
+    ($($arg:tt)*) => {};
+}
+
+// ============================================================================
+// Debug Utility Functions
+// ============================================================================
+
+/// Initialize logging for the EVM host functions
+/// Should be called once at the start of the application
+#[cfg(feature = "logging")]
+#[allow(dead_code)]
+pub fn init_logging() {
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Debug)
+        .init();
+}
+
+/// Initialize logging for the EVM host functions (no-op when logging disabled)
+#[cfg(not(feature = "logging"))]
+#[allow(dead_code)]
+pub fn init_logging() {
+    // No-op when logging is disabled
+}
+
+/// Format bytes as hex string for debugging
+pub fn format_hex(bytes: &[u8]) -> String {
+    hex::encode(bytes)
+}
+
+// ============================================================================
+// Memory Access Utilities
+// ============================================================================
 
 /// Memory accessor for safe WASM memory operations
 pub struct MemoryAccessor<'a, T> {
@@ -84,7 +179,7 @@ impl<'a, T> MemoryAccessor<'a, T> {
             let ptr = self.instance.get_host_memory(offset) as *mut u8;
             std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
         }
-        
+
         host_debug!("Wrote {} bytes to offset 0x{:x}", data.len(), offset);
         Ok(())
     }
@@ -122,11 +217,20 @@ impl<'a, T> MemoryAccessor<'a, T> {
     }
 
     /// Copy data between memory locations
-    pub fn copy_memory(&self, src_offset: u32, dst_offset: u32, length: u32) -> HostFunctionResult<()> {
+    pub fn copy_memory(
+        &self,
+        src_offset: u32,
+        dst_offset: u32,
+        length: u32,
+    ) -> HostFunctionResult<()> {
         let src_data = self.read_bytes(src_offset, length)?;
         self.write_bytes(dst_offset, src_data)
     }
 }
+
+// ============================================================================
+// Memory Validation Utilities
+// ============================================================================
 
 /// Helper function for safe memory operations
 pub fn safe_memory_access<T, U, F>(
@@ -163,7 +267,7 @@ where
         let memory_slice = std::slice::from_raw_parts_mut(ptr, length as usize);
         operation(memory_slice);
     }
-    
+
     Ok(())
 }
 
@@ -174,17 +278,17 @@ pub fn validate_memory_ranges<T>(
     ranges: &[(u32, u32)], // (offset, length) pairs
 ) -> HostFunctionResult<()> {
     let accessor = MemoryAccessor::new(instance);
-    
+
     for (i, &(offset, length)) in ranges.iter().enumerate() {
         if !accessor.validate_range(offset, length) {
             return Err(out_of_bounds_error(
-                offset, 
-                length, 
-                &format!("memory range validation failed at index {}", i)
+                offset,
+                length,
+                &format!("memory range validation failed at index {}", i),
             ));
         }
     }
-    
+
     Ok(())
 }
 
@@ -197,23 +301,23 @@ pub fn validate_offset_for_type<T>(
 ) -> HostFunctionResult<u32> {
     if offset < 0 {
         return Err(out_of_bounds_error(
-            offset as u32, 
-            type_size, 
-            &format!("negative offset for {}", type_name)
+            offset as u32,
+            type_size,
+            &format!("negative offset for {}", type_name),
         ));
     }
-    
+
     let offset_u32 = offset as u32;
     let accessor = MemoryAccessor::new(instance);
-    
+
     if !accessor.validate_range(offset_u32, type_size) {
         return Err(out_of_bounds_error(
-            offset_u32, 
-            type_size, 
-            &format!("invalid memory access for {}", type_name)
+            offset_u32,
+            type_size,
+            &format!("invalid memory access for {}", type_name),
         ));
     }
-    
+
     Ok(offset_u32)
 }
 
@@ -241,100 +345,43 @@ pub fn validate_data_param<T>(
 ) -> HostFunctionResult<(u32, u32)> {
     if offset < 0 {
         return Err(out_of_bounds_error(
-            offset as u32, 
-            length as u32, 
-            "negative data offset"
+            offset as u32,
+            length as u32,
+            "negative data offset",
         ));
     }
-    
+
     if length < 0 {
         return Err(out_of_bounds_error(
-            offset as u32, 
-            length as u32, 
-            "negative data length"
+            offset as u32,
+            length as u32,
+            "negative data length",
         ));
     }
-    
+
     let offset_u32 = offset as u32;
     let length_u32 = length as u32;
     let accessor = MemoryAccessor::new(instance);
-    
+
     if !accessor.validate_range(offset_u32, length_u32) {
         return Err(out_of_bounds_error(
-            offset_u32, 
-            length_u32, 
-            "invalid memory access for data"
+            offset_u32,
+            length_u32,
+            "invalid memory access for data",
         ));
     }
-    
+
     Ok((offset_u32, length_u32))
-}
-
-/// Copy data between two memory locations with validation
-pub fn safe_memory_copy<T>(
-    instance: &ZenInstance<T>,
-    src_offset: u32,
-    dst_offset: u32,
-    length: u32,
-) -> HostFunctionResult<()> {
-    let accessor = MemoryAccessor::new(instance);
-    
-    // Validate both source and destination ranges
-    validate_memory_ranges(instance, &[(src_offset, length), (dst_offset, length)])?;
-    
-    // Perform the copy
-    accessor.copy_memory(src_offset, dst_offset, length)
-}
-
-/// Fill memory range with a specific byte value
-pub fn safe_memory_fill<T>(
-    instance: &ZenInstance<T>,
-    offset: u32,
-    length: u32,
-    fill_byte: u8,
-) -> HostFunctionResult<()> {
-    safe_memory_write(instance, offset, length, |slice| {
-        slice.fill(fill_byte);
-    })
-}
-
-/// Zero-fill a memory range
-pub fn safe_memory_zero<T>(
-    instance: &ZenInstance<T>,
-    offset: u32,
-    length: u32,
-) -> HostFunctionResult<()> {
-    safe_memory_fill(instance, offset, length, 0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
-    fn test_validate_memory_ranges() {
-        // Test with empty ranges
-        let empty_ranges: &[(u32, u32)] = &[];
-        // Note: This would require a proper ZenInstance to test fully
-        // For now, this serves as documentation of expected behavior
-        
-        // Test with multiple ranges
-        let ranges = &[(0, 10), (20, 15), (50, 5)];
-        // validate_memory_ranges would check each range
-    }
-    
-    #[test]
-    fn test_parameter_validation() {
-        // Test negative offset validation
-        // validate_address_param should reject negative offsets
-        // validate_bytes32_param should reject negative offsets
-        // validate_data_param should reject negative offsets and lengths
-    }
-    
-    #[test]
-    fn test_memory_operations() {
-        // Test safe_memory_copy functionality
-        // Test safe_memory_fill functionality  
-        // Test safe_memory_zero functionality
+    fn test_format_hex() {
+        let data = vec![0x48, 0x65, 0x6c, 0x6c, 0x6f];
+        let hex_str = format_hex(&data);
+        assert_eq!(hex_str, "48656c6c6f");
     }
 }

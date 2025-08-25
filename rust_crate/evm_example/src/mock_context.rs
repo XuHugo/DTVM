@@ -1243,8 +1243,8 @@ impl MockContext {
     }
 }
 
-// Implement the EvmContext trait for MockContext
-impl EvmContext for MockContext {
+// Implement the EvmHost trait for MockContext
+impl EvmHost for MockContext {
     fn get_address(&self) -> &[u8; 20] {
         &self.address
     }
@@ -1355,12 +1355,14 @@ impl EvmContext for MockContext {
         self.events.borrow().clone()
     }
 
-    fn set_storage_bytes32(&self, key: &str, value: [u8; 32]) {
-        self.set_storage_bytes32(key, value);
+    fn storage_store(&self, key: &[u8; 32], value: &[u8; 32]) {
+        let key_hex = format!("0x{}", hex::encode(key));
+        self.set_storage_bytes32(&key_hex, *value);
     }
 
-    fn get_storage_bytes32(&self, key: &str) -> [u8; 32] {
-        self.get_storage_bytes32(key)
+    fn storage_load(&self, key: &[u8; 32]) -> [u8; 32] {
+        let key_hex = format!("0x{}", hex::encode(key));
+        self.get_storage_bytes32(&key_hex)
     }
 
     /// Self-destruct the current contract and transfer balance to recipient
@@ -1393,19 +1395,13 @@ impl EvmContext for MockContext {
         // For now, we just return the transferred amount
         contract_balance
     }
-}
-
-// Implement provider traits for MockContext
-impl AccountBalanceProvider for MockContext {
     fn get_account_balance(&self, _address: &[u8; 20]) -> [u8; 32] {
         // Return a mock balance (1000 ETH in wei)
         let mut balance = [0u8; 32];
         balance[24..32].copy_from_slice(&1000u64.to_be_bytes());
         balance
     }
-}
 
-impl BlockHashProvider for MockContext {
     fn get_block_hash(&self, _block_number: i64) -> Option<[u8; 32]> {
         // Return a mock block hash
         let mut hash = [0u8; 32];
@@ -1413,9 +1409,6 @@ impl BlockHashProvider for MockContext {
         hash[31] = 0xcd;
         Some(hash)
     }
-}
-
-impl ExternalCodeProvider for MockContext {
     fn get_external_code_size(&self, _address: &[u8; 20]) -> Option<i32> {
         // Return mock code size
         Some(100)
@@ -1433,9 +1426,7 @@ impl ExternalCodeProvider for MockContext {
         // Return mock code
         Some(vec![0x60, 0x00, 0x60, 0x00, 0xf3]) // Simple mock bytecode
     }
-}
 
-impl ContractCallProvider for MockContext {
     fn call_contract(
         &self,
         target: &[u8; 20],
