@@ -5,10 +5,10 @@
 
 use crate::core::instance::ZenInstance;
 use crate::evm::error::HostFunctionResult;
+use crate::evm::traits::EvmHost;
 use crate::evm::utils::{
     validate_address_param, validate_bytes32_param, validate_data_param, MemoryAccessor,
 };
-use crate::evm::traits::EvmHost;
 use crate::{host_error, host_info};
 
 /// Get the size of the current contract's code
@@ -72,7 +72,7 @@ where
     let mut buffer = vec![0u8; length_u32 as usize];
 
     // Copy code using the evmhost's copy_code method
-    let copied_bytes = evmhost.copy_code(&mut buffer, code_offset as usize, length_u32 as usize);
+    let copied_bytes = evmhost.code_copy(&mut buffer, code_offset as usize, length_u32 as usize);
 
     // Write the copied data to memory
     memory
@@ -295,7 +295,7 @@ where
     );
 
     // Query the external code using the ExternalCodeProvider trait
-    match evmhost.get_external_code(&address) {
+    match evmhost.external_code_copy(&address) {
         Some(external_code) => {
             host_info!(
                 "    📄 Retrieved external code: {} bytes",

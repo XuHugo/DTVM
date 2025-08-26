@@ -4,14 +4,14 @@
 //! Logging and event host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::traits::{EvmHost, LogEvent};
-use crate::evm::utils::{MemoryAccessor, validate_data_param, validate_bytes32_param, format_hex};
 use crate::evm::error::HostFunctionResult;
-use crate::{host_info, host_error};
+use crate::evm::traits::{EvmHost, LogEvent};
+use crate::evm::utils::{format_hex, validate_bytes32_param, validate_data_param, MemoryAccessor};
+use crate::{host_error, host_info};
 
 /// Emit a log event (LOG0, LOG1, LOG2, LOG3, LOG4 opcodes)
 /// Creates a log entry with the specified data and topics
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - data_offset: Memory offset of the log data
@@ -61,10 +61,17 @@ where
     let (data_offset_u32, length_u32) = validate_data_param(instance, data_offset, length)?;
 
     // Read the log data
-    let log_data = memory.read_bytes_vec(data_offset_u32, length_u32).map_err(|e| {
-        host_error!("Failed to read log data at offset {} length {}: {}", data_offset, length, e);
-        e
-    })?;
+    let log_data = memory
+        .read_bytes_vec(data_offset_u32, length_u32)
+        .map_err(|e| {
+            host_error!(
+                "Failed to read log data at offset {} length {}: {}",
+                data_offset,
+                length,
+                e
+            );
+            e
+        })?;
 
     // Read topics based on num_topics
     let mut topics = Vec::new();
@@ -75,13 +82,18 @@ where
         if topic_offset != 0 {
             // Validate topic offset
             let topic_offset_u32 = validate_bytes32_param(instance, topic_offset)?;
-            
+
             // Read the topic
             let topic = memory.read_bytes32(topic_offset_u32).map_err(|e| {
-                host_error!("Failed to read topic {} at offset {}: {}", i + 1, topic_offset, e);
+                host_error!(
+                    "Failed to read topic {} at offset {}: {}",
+                    i + 1,
+                    topic_offset,
+                    e
+                );
                 e
             })?;
-            
+
             topics.push(topic);
         } else {
             // Topic offset is 0, use zero topic
@@ -100,25 +112,28 @@ where
     };
 
     // Store the event in the evmhost (this is the key addition!)
-    evmhost.emit_event(log_event);
+    evmhost.emit_log_event(log_event);
 
     // Display the log event for debugging
     host_info!("=== LOG EVENT EMITTED ===");
     host_info!("Contract Address: 0x{}", hex::encode(&contract_address));
-    host_info!("Data ({} bytes): 0x{}", log_data.len(), format_hex(&log_data));
+    host_info!(
+        "Data ({} bytes): 0x{}",
+        log_data.len(),
+        format_hex(&log_data)
+    );
     host_info!("Number of Topics: {}", num_topics);
-    
+
     for (i, topic) in topics.iter().enumerate() {
         host_info!("Topic {}: 0x{}", i + 1, format_hex(topic));
     }
-    
+
     host_info!("========================");
 
     host_info!(
-        "emit_log_event completed: emitted log with {} bytes of data and {} topics, total events: {}",
+        "emit_log_event completed: emitted log with {} bytes of data and {} topics",
         log_data.len(),
-        num_topics,
-        evmhost.get_events().len()
+        num_topics
     );
 
     Ok(())
@@ -126,7 +141,7 @@ where
 
 /// Emit a simple log event with no topics (LOG0)
 /// Convenience function for LOG0 opcode
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - data_offset: Memory offset of the log data
@@ -144,7 +159,7 @@ where
 
 /// Emit a log event with one topic (LOG1)
 /// Convenience function for LOG1 opcode
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - data_offset: Memory offset of the log data
@@ -164,7 +179,7 @@ where
 
 /// Emit a log event with two topics (LOG2)
 /// Convenience function for LOG2 opcode
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - data_offset: Memory offset of the log data
@@ -181,12 +196,21 @@ pub fn emit_log2<T>(
 where
     T: EvmHost,
 {
-    emit_log_event(instance, data_offset, length, 2, topic1_offset, topic2_offset, 0, 0)
+    emit_log_event(
+        instance,
+        data_offset,
+        length,
+        2,
+        topic1_offset,
+        topic2_offset,
+        0,
+        0,
+    )
 }
 
 /// Emit a log event with three topics (LOG3)
 /// Convenience function for LOG3 opcode
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - data_offset: Memory offset of the log data
@@ -205,12 +229,21 @@ pub fn emit_log3<T>(
 where
     T: EvmHost,
 {
-    emit_log_event(instance, data_offset, length, 3, topic1_offset, topic2_offset, topic3_offset, 0)
+    emit_log_event(
+        instance,
+        data_offset,
+        length,
+        3,
+        topic1_offset,
+        topic2_offset,
+        topic3_offset,
+        0,
+    )
 }
 
 /// Emit a log event with four topics (LOG4)
 /// Convenience function for LOG4 opcode
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - data_offset: Memory offset of the log data
@@ -231,16 +264,21 @@ pub fn emit_log4<T>(
 where
     T: EvmHost,
 {
-    emit_log_event(instance, data_offset, length, 4, topic1_offset, topic2_offset, topic3_offset, topic4_offset)
+    emit_log_event(
+        instance,
+        data_offset,
+        length,
+        4,
+        topic1_offset,
+        topic2_offset,
+        topic3_offset,
+        topic4_offset,
+    )
 }
 
 /// Validate log event parameters
 #[allow(dead_code)]
-fn validate_log_params(
-    data_offset: i32,
-    length: i32,
-    num_topics: i32,
-) -> HostFunctionResult<()> {
+fn validate_log_params(data_offset: i32, length: i32, num_topics: i32) -> HostFunctionResult<()> {
     if data_offset < 0 {
         return Err(crate::evm::error::out_of_bounds_error(
             data_offset as u32,

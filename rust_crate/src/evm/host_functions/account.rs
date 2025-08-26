@@ -5,8 +5,8 @@
 
 use crate::core::instance::ZenInstance;
 use crate::evm::error::HostFunctionResult;
-use crate::evm::utils::{validate_address_param, validate_bytes32_param, MemoryAccessor};
 use crate::evm::traits::EvmHost;
+use crate::evm::utils::{validate_address_param, validate_bytes32_param, MemoryAccessor};
 use crate::{host_error, host_info};
 
 /// Get the current contract address
@@ -242,7 +242,7 @@ where
     );
 
     // Query the balance using the AccountBalanceProvider trait
-    let balance = evmhost.get_account_balance(&address);
+    let balance = evmhost.get_external_balance(&address);
 
     host_info!("    💰 Retrieved balance: 0x{}", hex::encode(&balance));
 

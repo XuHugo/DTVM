@@ -5,10 +5,10 @@
 
 use crate::core::instance::ZenInstance;
 use crate::evm::error::HostFunctionResult;
+use crate::evm::traits::EvmHost;
 use crate::evm::utils::{
     validate_address_param, validate_bytes32_param, validate_data_param, MemoryAccessor,
 };
-use crate::evm::traits::EvmHost;
 use crate::{host_error, host_info};
 
 /// Call another contract (CALL opcode)
@@ -110,7 +110,7 @@ where
     );
 
     // Store the return data in the evmhost for later retrieval
-    evmhost.set_return_data(result.return_data.clone());
+    //evmhost.set_return_data(result.return_data.clone());
 
     let success_code = if result.success { 1 } else { 0 };
     host_info!(
@@ -220,7 +220,7 @@ where
     );
 
     // Store the return data in the evmhost for later retrieval
-    evmhost.set_return_data(result.return_data.clone());
+    //evmhost.set_return_data(result.return_data.clone());
 
     let success_code = if result.success { 1 } else { 0 };
     host_info!(
@@ -310,7 +310,7 @@ where
     let result = evmhost.call_delegate(&target_address, &caller_address, &call_data, gas);
 
     // Store the return data in the evmhost for later retrieval
-    evmhost.set_return_data(result.return_data.clone());
+    //evmhost.set_return_data(result.return_data.clone());
 
     let success_code = if result.success { 1 } else { 0 };
     host_info!(
@@ -400,7 +400,7 @@ where
     let result = evmhost.call_static(&target_address, &caller_address, &call_data, gas);
 
     // Store the return data in the evmhost for later retrieval
-    evmhost.set_return_data(result.return_data.clone());
+    //evmhost.set_return_data(result.return_data.clone());
 
     let success_code = if result.success { 1 } else { 0 };
     host_info!(
@@ -530,7 +530,7 @@ where
     );
 
     // Store the return data in the evmhost for later retrieval
-    evmhost.set_return_data(result.return_data.clone());
+    //evmhost.set_return_data(result.return_data.clone());
 
     // Write the contract address to memory (or zero address if failed)
     let address_to_write = result.contract_address.unwrap_or([0u8; 20]);

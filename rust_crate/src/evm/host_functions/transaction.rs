@@ -2,22 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Transaction information related host functions
-//! 
+//!
 //! This module provides functions for accessing transaction-specific data
 //! such as call data, gas information, and transaction properties.
 
 use crate::core::instance::ZenInstance;
-use crate::evm::traits::EvmHost;
-use crate::evm::utils::{MemoryAccessor, validate_data_param, validate_bytes32_param};
 use crate::evm::error::HostFunctionResult;
-use crate::{host_info, host_error};
+use crate::evm::traits::EvmHost;
+use crate::evm::utils::{validate_bytes32_param, validate_data_param, MemoryAccessor};
+use crate::{host_error, host_info};
 
 /// Get the size of the call data
 /// Returns the size of the current call data in bytes
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
-/// 
+///
 /// Returns:
 /// - The size of the call data as i32
 pub fn get_call_data_size<T>(instance: &ZenInstance<T>) -> i32
@@ -26,17 +26,17 @@ where
 {
     let evmhost = &instance.extra_ctx;
     let call_data_size = evmhost.get_call_data_size();
-    
+
     host_info!("get_call_data_size called, returning: {}", call_data_size);
     call_data_size
 }
 
 /// Copy call data to memory
 /// Copies a portion of the call data to the specified memory location
-/// 
+///
 /// This function follows EVM semantics: if the requested data extends beyond
 /// the available call data, the remaining bytes are filled with zeros.
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - result_offset: Memory offset where the call data should be copied
@@ -63,7 +63,7 @@ where
 
     // Validate parameters
     let (result_offset_u32, length_u32) = validate_data_param(instance, result_offset, length)?;
-    
+
     if data_offset < 0 {
         return Err(crate::evm::error::out_of_bounds_error(
             data_offset as u32,
@@ -74,17 +74,24 @@ where
 
     // Create buffer with the exact requested length, initialized with zeros
     let mut buffer = vec![0u8; length_u32 as usize];
-    
+
     // Copy call data using the evmhost's copy_call_data method
     // This method handles bounds checking and zero-filling automatically
-    let copied_bytes = evmhost.copy_call_data(&mut buffer, data_offset as usize, length_u32 as usize);
-    
+    let copied_bytes =
+        evmhost.call_data_copy(&mut buffer, data_offset as usize, length_u32 as usize);
+
     // Write the entire buffer to memory (including any zero-filled portions)
     // This ensures we always write exactly 'length' bytes as requested
-    memory.write_bytes(result_offset_u32, &buffer).map_err(|e| {
-        host_error!("Failed to write call data to memory at offset {}: {}", result_offset, e);
-        e
-    })?;
+    memory
+        .write_bytes(result_offset_u32, &buffer)
+        .map_err(|e| {
+            host_error!(
+                "Failed to write call data to memory at offset {}: {}",
+                result_offset,
+                e
+            );
+            e
+        })?;
 
     host_info!(
         "call_data_copy completed: wrote {} bytes to memory (copied {} bytes from call data, {} bytes zero-filled)",
@@ -97,10 +104,10 @@ where
 
 /// Get the remaining gas for execution
 /// Returns the amount of gas left for the current execution
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
-/// 
+///
 /// Returns:
 /// - The remaining gas as i64
 pub fn get_gas_left<T>(instance: &ZenInstance<T>) -> i64
@@ -110,21 +117,18 @@ where
     //let _evmhost = &instance.extra_ctx;
     let gas_left = instance.get_gas_left();
     //let gas_left = evmhost.get_gas_left();
-    
+
     host_info!("get_gas_left called, returning: {}", gas_left);
     gas_left as i64
 }
 
 /// Get the transaction gas price
 /// Writes the 32-byte gas price to the specified memory location
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - result_offset: Memory offset where the 32-byte gas price should be written
-pub fn get_tx_gas_price<T>(
-    instance: &ZenInstance<T>,
-    result_offset: i32,
-) -> HostFunctionResult<()>
+pub fn get_tx_gas_price<T>(instance: &ZenInstance<T>, result_offset: i32) -> HostFunctionResult<()>
 where
     T: EvmHost,
 {
@@ -141,11 +145,18 @@ where
 
     // Write the gas price to memory
     memory.write_bytes32(offset, gas_price).map_err(|e| {
-        host_error!("Failed to write gas price at offset {}: {}", result_offset, e);
+        host_error!(
+            "Failed to write gas price at offset {}: {}",
+            result_offset,
+            e
+        );
         e
     })?;
 
-    host_info!("get_tx_gas_price completed: gas price written to offset {}", result_offset);
+    host_info!(
+        "get_tx_gas_price completed: gas price written to offset {}",
+        result_offset
+    );
     Ok(())
 }
 

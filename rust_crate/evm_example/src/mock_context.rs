@@ -880,7 +880,7 @@ impl MockContext {
 
     /// Copy contract code to a buffer with proper bounds checking
     /// This matches the behavior of the codeCopy host function
-    pub fn copy_code(&self, dest: &mut [u8], code_offset: usize, length: usize) -> usize {
+    pub fn code_copy(&self, dest: &mut [u8], code_offset: usize, length: usize) -> usize {
         let total_code_len = self.contract_code.len();
         let dest_len = dest.len();
 
@@ -1225,7 +1225,7 @@ impl MockContext {
                 // Deployment successful
                 Ok(ContractExecutionResult {
                     success: true,
-                    return_data: deploy_context.get_return_data(),
+                    return_data: deploy_context.return_data_copy(),
                     error_message: None,
                     is_reverted: false,
                 })
@@ -1240,6 +1240,13 @@ impl MockContext {
                 })
             }
         }
+    }
+
+    fn set_return_data(&self, data: Vec<u8>) {
+        let data_len = data.len();
+        *self.return_data.borrow_mut() = data;
+        *self.execution_status.borrow_mut() = Some(true); // Mark as finished successfully
+        println!("Set return data: {} bytes", data_len);
     }
 }
 
@@ -1309,14 +1316,14 @@ impl EvmHost for MockContext {
         &self.contract_code
     }
 
-    fn set_return_data(&self, data: Vec<u8>) {
+    fn finish(&self, data: Vec<u8>) {
         let data_len = data.len();
         *self.return_data.borrow_mut() = data;
         *self.execution_status.borrow_mut() = Some(true); // Mark as finished successfully
         println!("Set return data: {} bytes", data_len);
     }
 
-    fn get_return_data(&self) -> Vec<u8> {
+    fn return_data_copy(&self) -> Vec<u8> {
         self.return_data.borrow().clone()
     }
 
@@ -1327,19 +1334,19 @@ impl EvmHost for MockContext {
         println!("Set reverted with {} bytes of revert data", data_len);
     }
 
-    fn is_finished(&self) -> bool {
-        matches!(*self.execution_status.borrow(), Some(true))
-    }
+    // fn is_finished(&self) -> bool {
+    //     matches!(*self.execution_status.borrow(), Some(true))
+    // }
 
     fn is_reverted(&self) -> bool {
         matches!(*self.execution_status.borrow(), Some(false))
     }
 
-    fn is_running(&self) -> bool {
-        self.execution_status.borrow().is_none()
-    }
+    // fn is_running(&self) -> bool {
+    //     self.execution_status.borrow().is_none()
+    // }
 
-    fn emit_event(&self, event: LogEvent) {
+    fn emit_log_event(&self, event: LogEvent) {
         let event_count = self.events.borrow().len();
         self.events.borrow_mut().push(event.clone());
         println!(
@@ -1351,9 +1358,9 @@ impl EvmHost for MockContext {
         );
     }
 
-    fn get_events(&self) -> Vec<LogEvent> {
-        self.events.borrow().clone()
-    }
+    // fn get_events(&self) -> Vec<LogEvent> {
+    //     self.events.borrow().clone()
+    // }
 
     fn storage_store(&self, key: &[u8; 32], value: &[u8; 32]) {
         let key_hex = format!("0x{}", hex::encode(key));
@@ -1372,7 +1379,7 @@ impl EvmHost for MockContext {
 
         // Get the current contract's balance using AccountBalanceProvider
         let contract_address = self.get_address();
-        let contract_balance = self.get_account_balance(contract_address);
+        let contract_balance = self.get_external_balance(contract_address);
         let balance_amount = u64::from_be_bytes([
             contract_balance[24],
             contract_balance[25],
@@ -1395,7 +1402,7 @@ impl EvmHost for MockContext {
         // For now, we just return the transferred amount
         contract_balance
     }
-    fn get_account_balance(&self, _address: &[u8; 20]) -> [u8; 32] {
+    fn get_external_balance(&self, _address: &[u8; 20]) -> [u8; 32] {
         // Return a mock balance (1000 ETH in wei)
         let mut balance = [0u8; 32];
         balance[24..32].copy_from_slice(&1000u64.to_be_bytes());
@@ -1422,7 +1429,7 @@ impl EvmHost for MockContext {
         Some(hash)
     }
 
-    fn get_external_code(&self, _address: &[u8; 20]) -> Option<Vec<u8>> {
+    fn external_code_copy(&self, _address: &[u8; 20]) -> Option<Vec<u8>> {
         // Return mock code
         Some(vec![0x60, 0x00, 0x60, 0x00, 0xf3]) // Simple mock bytecode
     }
@@ -1474,7 +1481,7 @@ impl EvmHost for MockContext {
         ) {
             Ok(result) => {
                 let gas_used = gas.min(50000); // Mock gas consumption
-
+                self.set_return_data(result.return_data.clone());
                 if result.success && !result.is_reverted {
                     println!(
                         "   ✅ Call succeeded, return data: {} bytes",
@@ -1532,7 +1539,7 @@ impl EvmHost for MockContext {
         ) {
             Ok(result) => {
                 let gas_used = gas.min(50000);
-
+                self.set_return_data(result.return_data.clone());
                 if result.success && !result.is_reverted {
                     println!(
                         "   ✅ CALLCODE succeeded, return data: {} bytes",
@@ -1592,7 +1599,7 @@ impl EvmHost for MockContext {
         ) {
             Ok(result) => {
                 let gas_used = gas.min(50000);
-
+                self.set_return_data(result.return_data.clone());
                 if result.success && !result.is_reverted {
                     println!(
                         "   ✅ DELEGATECALL succeeded, return data: {} bytes",
@@ -1650,7 +1657,7 @@ impl EvmHost for MockContext {
         ) {
             Ok(result) => {
                 let gas_used = gas.min(50000);
-
+                self.set_return_data(result.return_data.clone());
                 if result.success && !result.is_reverted {
                     println!(
                         "   ✅ STATICCALL succeeded, return data: {} bytes",
@@ -1759,6 +1766,7 @@ impl EvmHost for MockContext {
                 *value,
             ) {
                 Ok(result) => {
+                    self.set_return_data(result.return_data.clone());
                     if result.success {
                         println!("   ✅ Constructor executed successfully");
                         result.return_data

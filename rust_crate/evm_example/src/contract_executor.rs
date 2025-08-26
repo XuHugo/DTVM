@@ -111,7 +111,7 @@ impl ContractExecutor {
                 if is_reverted {
                     println!("⚠️ 函数执行被回滚");
                     let return_data = if context.has_return_data() {
-                        let data = context.get_return_data();
+                        let data = context.return_data_copy();
                         println!("   📝 回滚数据: {}", context.get_return_data_hex());
                         data
                     } else {
@@ -128,7 +128,7 @@ impl ContractExecutor {
                     println!("✓ 函数执行成功");
 
                     let return_data = if context.has_return_data() {
-                        let data = context.get_return_data();
+                        let data = context.return_data_copy();
                         println!("   ✅ 返回数据: {}", context.get_return_data_hex());
                         data
                     } else {

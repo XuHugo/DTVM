@@ -8,6 +8,11 @@
 //! and allow users to integrate with their own blockchain nodes, databases,
 //! or testing environments.
 
+use num_bigint::BigUint;
+use num_traits::{One, Zero};
+use sha2::{Digest, Sha256};
+use sha3::Keccak256;
+
 /// Log event emitted by a contract
 /// Represents an EVM log entry with contract address, data, and topics
 #[derive(Clone, Debug, PartialEq)]
@@ -101,6 +106,26 @@ impl ContractCreateResult {
     }
 }
 
+/// Convert a BigUint to a 32-byte array (big-endian, zero-padded)
+/// This ensures the result fits in exactly 32 bytes as required by EVM
+fn bigint_to_bytes32(value: &BigUint) -> [u8; 32] {
+    let mut result = [0u8; 32];
+    let bytes = value.to_bytes_be();
+
+    // If the value is larger than 256 bits, we need to truncate it
+    // This shouldn't happen in normal EVM operations, but we handle it for safety
+    if bytes.len() > 32 {
+        // Take the least significant 32 bytes (rightmost)
+        result.copy_from_slice(&bytes[bytes.len() - 32..]);
+    } else {
+        // Zero-pad on the left (big-endian)
+        let start_pos = 32 - bytes.len();
+        result[start_pos..].copy_from_slice(&bytes);
+    }
+
+    result
+}
+
 /// Unified EVM Host Interface (EVMC-compatible)
 ///
 /// This trait consolidates all EVM host functions into a single interface,
@@ -152,7 +177,7 @@ pub trait EvmHost {
     fn get_chain_id(&self) -> &[u8; 32];
 
     /// Copy call data to a buffer with proper bounds checking
-    fn copy_call_data(&self, dest: &mut [u8], data_offset: usize, length: usize) -> usize {
+    fn call_data_copy(&self, dest: &mut [u8], data_offset: usize, length: usize) -> usize {
         let call_data = self.get_call_data();
         let dest_len = dest.len();
 
@@ -202,16 +227,10 @@ pub trait EvmHost {
     fn storage_load(&self, key: &[u8; 32]) -> [u8; 32];
 
     /// Add an event to the event log
-    fn emit_event(&self, event: LogEvent);
-
-    /// Check if execution finished successfully
-    fn is_finished(&self) -> bool;
+    fn emit_log_event(&self, event: LogEvent);
 
     /// Check if execution was reverted
     fn is_reverted(&self) -> bool;
-
-    /// Check if execution is still running
-    fn is_running(&self) -> bool;
 
     /// Get the contract code size
     fn get_code_size(&self) -> i32 {
@@ -219,7 +238,7 @@ pub trait EvmHost {
     }
 
     /// Copy contract code to a buffer with proper bounds checking
-    fn copy_code(&self, dest: &mut [u8], code_offset: usize, length: usize) -> usize {
+    fn code_copy(&self, dest: &mut [u8], code_offset: usize, length: usize) -> usize {
         let code = self.get_contract_code();
         let dest_len = dest.len();
 
@@ -265,7 +284,7 @@ pub trait EvmHost {
     ///
     /// Returns:
     /// - The 32-byte balance value in big-endian format
-    fn get_account_balance(&self, address: &[u8; 20]) -> [u8; 32];
+    fn get_external_balance(&self, address: &[u8; 20]) -> [u8; 32];
 
     /// Get the size of an external contract's code
     fn get_external_code_size(&self, address: &[u8; 20]) -> Option<i32>;
@@ -274,7 +293,7 @@ pub trait EvmHost {
     fn get_external_code_hash(&self, address: &[u8; 20]) -> Option<[u8; 32]>;
 
     /// Get the bytecode of an external contract
-    fn get_external_code(&self, address: &[u8; 20]) -> Option<Vec<u8>>;
+    fn external_code_copy(&self, address: &[u8; 20]) -> Option<Vec<u8>>;
 
     /// Get the current block's previous randao
     fn get_block_prev_randao(&self) -> &[u8; 32];
@@ -340,26 +359,99 @@ pub trait EvmHost {
 
     /// Get the return data size
     fn get_return_data_size(&self) -> usize {
-        self.get_return_data().len()
+        self.return_data_copy().len()
     }
 
     /// Get the contract code
     fn get_contract_code(&self) -> &[u8];
 
-    /// Set the return data from contract execution
-    fn set_return_data(&self, data: Vec<u8>);
-
+    fn finish(&self, data: Vec<u8>);
     /// Get the return data
-    fn get_return_data(&self) -> Vec<u8>;
+    fn return_data_copy(&self) -> Vec<u8>;
 
     /// Set execution status to reverted
     fn set_reverted(&self, revert_data: Vec<u8>);
 
-    /// Get all emitted events
-    fn get_events(&self) -> Vec<LogEvent>;
+    fn sha256(&self, input_data: Vec<u8>) -> [u8; 32] {
+        // Compute SHA256 hash using the sha2 crate
+        let mut hasher = Sha256::new();
+        hasher.update(&input_data);
+        hasher.finalize().into()
+    }
+
+    fn keccak256(&self, input_data: Vec<u8>) -> [u8; 32] {
+        // Compute Keccak256 hash using the sha3 crate
+        let mut hasher = Keccak256::new();
+        hasher.update(&input_data);
+        hasher.finalize().into()
+    }
+    fn addmod(&self, a_bytes: [u8; 32], b_bytes: [u8; 32], n_bytes: [u8; 32]) -> [u8; 32] {
+        // Convert bytes to BigUint (big-endian)
+        let a = BigUint::from_bytes_be(&a_bytes);
+        let b = BigUint::from_bytes_be(&b_bytes);
+        let n = BigUint::from_bytes_be(&n_bytes);
+
+        // Handle special case: if n is zero, return zero (EVM behavior)
+        let result = if n.is_zero() {
+            BigUint::zero()
+        } else {
+            (&a + &b) % &n
+        };
+
+        // Convert result back to 32-byte array (big-endian, zero-padded)
+        bigint_to_bytes32(&result)
+    }
+
+    fn mulmod(&self, a_bytes: [u8; 32], b_bytes: [u8; 32], n_bytes: [u8; 32]) -> [u8; 32] {
+        // Convert bytes to BigUint (big-endian)
+        let a = BigUint::from_bytes_be(&a_bytes);
+        let b = BigUint::from_bytes_be(&b_bytes);
+        let n = BigUint::from_bytes_be(&n_bytes);
+
+        // Handle special case: if n is zero, return zero (EVM behavior)
+        let result = if n.is_zero() {
+            BigUint::zero()
+        } else {
+            (&a * &b) % &n
+        };
+
+        // Convert result back to 32-byte array (big-endian, zero-padded)
+        bigint_to_bytes32(&result)
+    }
+
+    fn expmod(&self, base_bytes: [u8; 32], exp_bytes: [u8; 32], mod_bytes: [u8; 32]) -> [u8; 32] {
+        // Convert bytes to BigUint (big-endian)
+        let base = BigUint::from_bytes_be(&base_bytes);
+        let exponent = BigUint::from_bytes_be(&exp_bytes);
+        let modulus = BigUint::from_bytes_be(&mod_bytes);
+
+        // Handle special cases according to EVM specification
+        let result = if modulus.is_zero() {
+            // If modulus is 0, return 0 (EVM behavior)
+            BigUint::zero()
+        } else if modulus.is_one() {
+            // If modulus is 1, result is always 0
+            BigUint::zero()
+        } else if exponent.is_zero() {
+            // If exponent is 0, result is 1 (unless base is 0 and modulus > 1)
+            if base.is_zero() && modulus > BigUint::one() {
+                BigUint::zero()
+            } else {
+                BigUint::one()
+            }
+        } else if base.is_zero() {
+            // If base is 0 and exponent > 0, result is 0
+            BigUint::zero()
+        } else {
+            // Perform modular exponentiation using the built-in efficient algorithm
+            base.modpow(&exponent, &modulus)
+        };
+        // Convert result back to 32-byte array (big-endian, zero-padded)
+        bigint_to_bytes32(&result)
+    }
 }
 
-pub trait Host {
+pub trait EvmHosts {
     /// Get the current contract address
     fn get_address(&self) -> &[u8; 20];
     /// Get the caller address (msg.sender)
@@ -386,6 +478,8 @@ pub trait Host {
     fn get_block_gas_limit(&self) -> i64;
     /// Get the current block coinbase address
     fn get_block_coinbase(&self) -> &[u8; 20];
+    /// Get the current block number
+    fn get_block_number(&self) -> i64;
     /// Get the current block's blob base fee
     fn get_blob_base_fee(&self) -> &[u8; 32];
     /// Get the current block's base fee
@@ -474,20 +568,90 @@ pub trait Host {
     }
     /// Get the size of an external contract's code
     fn get_external_code_size(&self, address: &[u8; 20]) -> Option<i32>;
+
     /// Get the hash of an external contract's code
     fn get_external_code_hash(&self, address: &[u8; 20]) -> Option<[u8; 32]>;
 
-        /// Get the bytecode of an external contract
+    /// Get the bytecode of an external contract
     fn external_code_copy(&self, address: &[u8; 20]) -> Option<Vec<u8>>;
 
-        fn sha256(&self) -> i64;
-            fn keccak256(&self) -> i64;
-                fn addmod(&self) -> i64;
-                    fn mulmod(&self) -> i64;
-                        fn expmod(&self) -> i64;
+    fn sha256(&self, input_data: Vec<u8>) -> [u8; 32] {
+        // Compute SHA256 hash using the sha2 crate
+        let mut hasher = Sha256::new();
+        hasher.update(&input_data);
+        hasher.finalize().into()
+    }
 
+    fn keccak256(&self, input_data: Vec<u8>) -> [u8; 32] {
+        // Compute Keccak256 hash using the sha3 crate
+        let mut hasher = Keccak256::new();
+        hasher.update(&input_data);
+        hasher.finalize().into()
+    }
+    fn addmod(&self, a_bytes: [u8; 32], b_bytes: [u8; 32], n_bytes: [u8; 32]) -> [u8; 32] {
+        // Convert bytes to BigUint (big-endian)
+        let a = BigUint::from_bytes_be(&a_bytes);
+        let b = BigUint::from_bytes_be(&b_bytes);
+        let n = BigUint::from_bytes_be(&n_bytes);
 
+        // Handle special case: if n is zero, return zero (EVM behavior)
+        let result = if n.is_zero() {
+            BigUint::zero()
+        } else {
+            (&a + &b) % &n
+        };
 
+        // Convert result back to 32-byte array (big-endian, zero-padded)
+        bigint_to_bytes32(&result)
+    }
+
+    fn mulmod(&self, a_bytes: [u8; 32], b_bytes: [u8; 32], n_bytes: [u8; 32]) -> [u8; 32] {
+        // Convert bytes to BigUint (big-endian)
+        let a = BigUint::from_bytes_be(&a_bytes);
+        let b = BigUint::from_bytes_be(&b_bytes);
+        let n = BigUint::from_bytes_be(&n_bytes);
+
+        // Handle special case: if n is zero, return zero (EVM behavior)
+        let result = if n.is_zero() {
+            BigUint::zero()
+        } else {
+            (&a * &b) % &n
+        };
+
+        // Convert result back to 32-byte array (big-endian, zero-padded)
+        bigint_to_bytes32(&result)
+    }
+
+    fn expmod(&self, base_bytes: [u8; 32], exp_bytes: [u8; 32], mod_bytes: [u8; 32]) -> [u8; 32] {
+        // Convert bytes to BigUint (big-endian)
+        let base = BigUint::from_bytes_be(&base_bytes);
+        let exponent = BigUint::from_bytes_be(&exp_bytes);
+        let modulus = BigUint::from_bytes_be(&mod_bytes);
+
+        // Handle special cases according to EVM specification
+        let result = if modulus.is_zero() {
+            // If modulus is 0, return 0 (EVM behavior)
+            BigUint::zero()
+        } else if modulus.is_one() {
+            // If modulus is 1, result is always 0
+            BigUint::zero()
+        } else if exponent.is_zero() {
+            // If exponent is 0, result is 1 (unless base is 0 and modulus > 1)
+            if base.is_zero() && modulus > BigUint::one() {
+                BigUint::zero()
+            } else {
+                BigUint::one()
+            }
+        } else if base.is_zero() {
+            // If base is 0 and exponent > 0, result is 0
+            BigUint::zero()
+        } else {
+            // Perform modular exponentiation using the built-in efficient algorithm
+            base.modpow(&exponent, &modulus)
+        };
+        // Convert result back to 32-byte array (big-endian, zero-padded)
+        bigint_to_bytes32(&result)
+    }
 
     /// Execute a regular contract call (CALL opcode)
     fn call_contract(
@@ -534,10 +698,12 @@ pub trait Host {
         salt: Option<[u8; 32]>,
         is_create2: bool,
     ) -> ContractCreateResult;
-finish
-revert
-invalid
+
+    fn finish(&self, data: Vec<u8>);
+    fn revert(&self) -> i64;
+
     /// Self-destruct the current contract and transfer balance to recipient
+    fn invalid(&self) -> i64;
     ///
     /// Parameters:
     /// - recipient: The address to receive the contract's balance
@@ -547,12 +713,46 @@ invalid
     fn self_destruct(&self, recipient: &[u8; 20]) -> [u8; 32];
     /// Get the return data size
     fn get_return_data_size(&self) -> usize {
-        self.get_return_data().len()
+        self.return_data_copy().len()
     }
-    fn return_data_copy(&self);
+    fn return_data_copy(&self) -> Vec<u8>;
 
     /// Add an event to the event log
     fn emit_log_event(&self, event: LogEvent);
     /// Get the remaining gas for execution
     fn get_gas_left(&self) -> i64;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bigint_to_bytes32() {
+        // Test zero
+        let zero = BigUint::zero();
+        let zero_bytes = bigint_to_bytes32(&zero);
+        assert_eq!(zero_bytes, [0u8; 32]);
+
+        // Test one
+        let one = BigUint::one();
+        let one_bytes = bigint_to_bytes32(&one);
+        let mut expected = [0u8; 32];
+        expected[31] = 1;
+        assert_eq!(one_bytes, expected);
+
+        // Test maximum 32-byte value
+        let max_bytes = [0xFFu8; 32];
+        let max_value = BigUint::from_bytes_be(&max_bytes);
+        let result_bytes = bigint_to_bytes32(&max_value);
+        assert_eq!(result_bytes, max_bytes);
+
+        // Test small value
+        let small_value = BigUint::from(0x1234u32);
+        let small_bytes = bigint_to_bytes32(&small_value);
+        let mut expected_small = [0u8; 32];
+        expected_small[30] = 0x12;
+        expected_small[31] = 0x34;
+        assert_eq!(small_bytes, expected_small);
+    }
 }

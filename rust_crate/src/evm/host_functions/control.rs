@@ -5,8 +5,8 @@
 
 use crate::core::instance::ZenInstance;
 use crate::evm::error::HostFunctionResult;
-use crate::evm::utils::{validate_address_param, validate_data_param, MemoryAccessor};
 use crate::evm::traits::EvmHost;
+use crate::evm::utils::{validate_address_param, validate_data_param, MemoryAccessor};
 use crate::{host_error, host_info, host_warn};
 
 /// Finish execution and return data (RETURN opcode)
@@ -53,7 +53,7 @@ where
 
     // Store the return data in the Mockevmhost so it can be accessed externally
     let evmhost = &instance.extra_ctx;
-    evmhost.set_return_data(return_data.clone());
+    evmhost.finish(return_data.clone());
 
     host_info!(
         "finish: return data stored in evmhost, hex: 0x{}",
@@ -283,7 +283,7 @@ where
     }
 
     // Get the return data from the evmhost
-    let return_data = evmhost.get_return_data();
+    let return_data = evmhost.return_data_copy();
     let data_offset_usize = data_offset as usize;
 
     host_info!("    📤 Available return data: {} bytes", return_data.len());

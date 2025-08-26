@@ -4,16 +4,16 @@
 //! Mathematical operation host functions
 
 use crate::core::instance::ZenInstance;
-use crate::evm::traits::EvmHost;
-use crate::evm::utils::{MemoryAccessor, validate_bytes32_param, format_hex};
 use crate::evm::error::HostFunctionResult;
-use crate::{host_info, host_error};
+use crate::evm::traits::EvmHost;
+use crate::evm::utils::{format_hex, validate_bytes32_param, MemoryAccessor};
+use crate::{host_error, host_info};
 use num_bigint::BigUint;
-use num_traits::{Zero, One};
+use num_traits::{One, Zero};
 
 /// Modular addition: (a + b) % n
 /// Computes the modular addition of two 256-bit numbers
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - a_offset: Memory offset of the first 32-byte operand
@@ -62,39 +62,40 @@ where
         e
     })?;
 
-    host_info!("addmod operands: a=0x{}, b=0x{}, n=0x{}", 
-               format_hex(&a_bytes), format_hex(&b_bytes), format_hex(&n_bytes));
+    host_info!(
+        "addmod operands: a=0x{}, b=0x{}, n=0x{}",
+        format_hex(&a_bytes),
+        format_hex(&b_bytes),
+        format_hex(&n_bytes)
+    );
 
-    // Convert bytes to BigUint (big-endian)
-    let a = BigUint::from_bytes_be(&a_bytes);
-    let b = BigUint::from_bytes_be(&b_bytes);
-    let n = BigUint::from_bytes_be(&n_bytes);
-
-    // Handle special case: if n is zero, return zero (EVM behavior)
-    let result = if n.is_zero() {
-        BigUint::zero()
-    } else {
-        (&a + &b) % &n
-    };
-
-    // Convert result back to 32-byte array (big-endian, zero-padded)
-    let result_bytes = bigint_to_bytes32(&result);
+    let evmhost = &instance.extra_ctx;
+    let result_bytes: [u8; 32] = evmhost.addmod(a_bytes, b_bytes, n_bytes);
 
     host_info!("addmod result: 0x{}", format_hex(&result_bytes));
 
     // Write the result to memory
-    memory.write_bytes32(result_offset_u32, &result_bytes).map_err(|e| {
-        host_error!("Failed to write addmod result at offset {}: {}", result_offset, e);
-        e
-    })?;
+    memory
+        .write_bytes32(result_offset_u32, &result_bytes)
+        .map_err(|e| {
+            host_error!(
+                "Failed to write addmod result at offset {}: {}",
+                result_offset,
+                e
+            );
+            e
+        })?;
 
-    host_info!("addmod completed: result written to offset {}", result_offset);
+    host_info!(
+        "addmod completed: result written to offset {}",
+        result_offset
+    );
     Ok(())
 }
 
 /// Modular multiplication: (a * b) % n
 /// Computes the modular multiplication of two 256-bit numbers
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - a_offset: Memory offset of the first 32-byte operand
@@ -143,39 +144,40 @@ where
         e
     })?;
 
-    host_info!("mulmod operands: a=0x{}, b=0x{}, n=0x{}", 
-               format_hex(&a_bytes), format_hex(&b_bytes), format_hex(&n_bytes));
+    host_info!(
+        "mulmod operands: a=0x{}, b=0x{}, n=0x{}",
+        format_hex(&a_bytes),
+        format_hex(&b_bytes),
+        format_hex(&n_bytes)
+    );
 
-    // Convert bytes to BigUint (big-endian)
-    let a = BigUint::from_bytes_be(&a_bytes);
-    let b = BigUint::from_bytes_be(&b_bytes);
-    let n = BigUint::from_bytes_be(&n_bytes);
-
-    // Handle special case: if n is zero, return zero (EVM behavior)
-    let result = if n.is_zero() {
-        BigUint::zero()
-    } else {
-        (&a * &b) % &n
-    };
-
-    // Convert result back to 32-byte array (big-endian, zero-padded)
-    let result_bytes = bigint_to_bytes32(&result);
+    let evmhost = &instance.extra_ctx;
+    let result_bytes: [u8; 32] = evmhost.mulmod(a_bytes, b_bytes, n_bytes);
 
     host_info!("mulmod result: 0x{}", format_hex(&result_bytes));
 
     // Write the result to memory
-    memory.write_bytes32(result_offset_u32, &result_bytes).map_err(|e| {
-        host_error!("Failed to write mulmod result at offset {}: {}", result_offset, e);
-        e
-    })?;
+    memory
+        .write_bytes32(result_offset_u32, &result_bytes)
+        .map_err(|e| {
+            host_error!(
+                "Failed to write mulmod result at offset {}: {}",
+                result_offset,
+                e
+            );
+            e
+        })?;
 
-    host_info!("mulmod completed: result written to offset {}", result_offset);
+    host_info!(
+        "mulmod completed: result written to offset {}",
+        result_offset
+    );
     Ok(())
 }
 
 /// Modular exponentiation: (base ^ exponent) % modulus
 /// Computes the modular exponentiation of 256-bit numbers using efficient algorithms
-/// 
+///
 /// Parameters:
 /// - instance: WASM instance pointer
 /// - base_offset: Memory offset of the 32-byte base
@@ -224,69 +226,35 @@ where
         e
     })?;
 
-    host_info!("expmod operands: base=0x{}, exp=0x{}, mod=0x{}", 
-               format_hex(&base_bytes), format_hex(&exp_bytes), format_hex(&mod_bytes));
+    host_info!(
+        "expmod operands: base=0x{}, exp=0x{}, mod=0x{}",
+        format_hex(&base_bytes),
+        format_hex(&exp_bytes),
+        format_hex(&mod_bytes)
+    );
 
-    // Convert bytes to BigUint (big-endian)
-    let base = BigUint::from_bytes_be(&base_bytes);
-    let exponent = BigUint::from_bytes_be(&exp_bytes);
-    let modulus = BigUint::from_bytes_be(&mod_bytes);
-
-    // Handle special cases according to EVM specification
-    let result = if modulus.is_zero() {
-        // If modulus is 0, return 0 (EVM behavior)
-        BigUint::zero()
-    } else if modulus.is_one() {
-        // If modulus is 1, result is always 0
-        BigUint::zero()
-    } else if exponent.is_zero() {
-        // If exponent is 0, result is 1 (unless base is 0 and modulus > 1)
-        if base.is_zero() && modulus > BigUint::one() {
-            BigUint::zero()
-        } else {
-            BigUint::one()
-        }
-    } else if base.is_zero() {
-        // If base is 0 and exponent > 0, result is 0
-        BigUint::zero()
-    } else {
-        // Perform modular exponentiation using the built-in efficient algorithm
-        base.modpow(&exponent, &modulus)
-    };
-
-    // Convert result back to 32-byte array (big-endian, zero-padded)
-    let result_bytes = bigint_to_bytes32(&result);
+    let evmhost = &instance.extra_ctx;
+    let result_bytes: [u8; 32] = evmhost.expmod(base_bytes, exp_bytes, mod_bytes);
 
     host_info!("expmod result: 0x{}", format_hex(&result_bytes));
 
     // Write the result to memory
-    memory.write_bytes32(result_offset_u32, &result_bytes).map_err(|e| {
-        host_error!("Failed to write expmod result at offset {}: {}", result_offset, e);
-        e
-    })?;
+    memory
+        .write_bytes32(result_offset_u32, &result_bytes)
+        .map_err(|e| {
+            host_error!(
+                "Failed to write expmod result at offset {}: {}",
+                result_offset,
+                e
+            );
+            e
+        })?;
 
-    host_info!("expmod completed: result written to offset {}", result_offset);
+    host_info!(
+        "expmod completed: result written to offset {}",
+        result_offset
+    );
     Ok(())
-}
-
-/// Convert a BigUint to a 32-byte array (big-endian, zero-padded)
-/// This ensures the result fits in exactly 32 bytes as required by EVM
-fn bigint_to_bytes32(value: &BigUint) -> [u8; 32] {
-    let mut result = [0u8; 32];
-    let bytes = value.to_bytes_be();
-    
-    // If the value is larger than 256 bits, we need to truncate it
-    // This shouldn't happen in normal EVM operations, but we handle it for safety
-    if bytes.len() > 32 {
-        // Take the least significant 32 bytes (rightmost)
-        result.copy_from_slice(&bytes[bytes.len() - 32..]);
-    } else {
-        // Zero-pad on the left (big-endian)
-        let start_pos = 32 - bytes.len();
-        result[start_pos..].copy_from_slice(&bytes);
-    }
-    
-    result
 }
 
 /// Helper function to validate modular arithmetic parameters
@@ -334,54 +302,25 @@ mod tests {
     }
 
     #[test]
-    fn test_bigint_to_bytes32() {
-        // Test zero
-        let zero = BigUint::zero();
-        let zero_bytes = bigint_to_bytes32(&zero);
-        assert_eq!(zero_bytes, [0u8; 32]);
-
-        // Test one
-        let one = BigUint::one();
-        let one_bytes = bigint_to_bytes32(&one);
-        let mut expected = [0u8; 32];
-        expected[31] = 1;
-        assert_eq!(one_bytes, expected);
-
-        // Test maximum 32-byte value
-        let max_bytes = [0xFFu8; 32];
-        let max_value = BigUint::from_bytes_be(&max_bytes);
-        let result_bytes = bigint_to_bytes32(&max_value);
-        assert_eq!(result_bytes, max_bytes);
-
-        // Test small value
-        let small_value = BigUint::from(0x1234u32);
-        let small_bytes = bigint_to_bytes32(&small_value);
-        let mut expected_small = [0u8; 32];
-        expected_small[30] = 0x12;
-        expected_small[31] = 0x34;
-        assert_eq!(small_bytes, expected_small);
-    }
-
-    #[test]
     fn test_math_function_behavior() {
         // Test basic mathematical properties
         // addmod: (a + b) % n should equal expected result
-        // mulmod: (a * b) % n should equal expected result  
+        // mulmod: (a * b) % n should equal expected result
         // expmod: (a ^ b) % n should equal expected result
-        
+
         // Test with known values
         let a = BigUint::from(5u32);
         let b = BigUint::from(3u32);
         let n = BigUint::from(7u32);
-        
+
         // addmod: (5 + 3) % 7 = 8 % 7 = 1
         let add_result = (&a + &b) % &n;
         assert_eq!(add_result, BigUint::from(1u32));
-        
+
         // mulmod: (5 * 3) % 7 = 15 % 7 = 1
         let mul_result = (&a * &b) % &n;
         assert_eq!(mul_result, BigUint::from(1u32));
-        
+
         // expmod: (5 ^ 3) % 7 = 125 % 7 = 6
         let exp_result = a.modpow(&b, &n);
         assert_eq!(exp_result, BigUint::from(6u32));
@@ -393,15 +332,15 @@ mod tests {
         let a = BigUint::from(5u32);
         let b = BigUint::from(3u32);
         let zero = BigUint::zero();
-        
+
         // All operations with zero modulus should return zero
-        assert_eq!(bigint_to_bytes32(&zero), [0u8; 32]);
-        
+        //assert_eq!(bigint_to_bytes32(&zero), [0u8; 32]);
+
         // Test with modulus = 1
         let one = BigUint::one();
         let result_mod1 = (&a + &b) % &one;
         assert_eq!(result_mod1, BigUint::zero());
-        
+
         // Test expmod edge cases
         // 0^0 % n (where n > 1) should be 0 in EVM
         let zero_exp_result = if zero.is_zero() && one > BigUint::one() {
@@ -410,7 +349,7 @@ mod tests {
             BigUint::one()
         };
         assert_eq!(zero_exp_result, BigUint::zero());
-        
+
         // a^0 % n should be 1 (unless a=0 and n>1)
         let any_to_zero = BigUint::from(123u32).modpow(&zero, &BigUint::from(7u32));
         assert_eq!(any_to_zero, BigUint::one());
