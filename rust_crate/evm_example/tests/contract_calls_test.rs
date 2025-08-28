@@ -18,7 +18,6 @@ fn test_contract_calls() {
     init_test_env();
 
     // Load WASM modules
-    println!("=== Loading WASM Modules ===");
     let contract_calls_wasm =
         load_wasm_file("../example/ContractCalls.wasm").expect("Failed to load ContractCalls.wasm");
     let simple_target_wasm =

@@ -246,8 +246,8 @@ fn test_gas_left(executor: &ContractExecutor, context: &mut MockContext) {
     assert!(result.success, "getGasleft should succeed");
     let count_value = decode_uint256(&result.return_data).unwrap();
     assert_eq!(
-        count_value, 1000000,
-        "Gas left should be 1000000, got {}",
+        count_value, 100,
+        "Gas left should be 100, got {}",
         count_value
     );
 }

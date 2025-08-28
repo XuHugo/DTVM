@@ -109,9 +109,6 @@ where
         gas,
     );
 
-    // Store the return data in the evmhost for later retrieval
-    //evmhost.set_return_data(result.return_data.clone());
-
     let success_code = if result.success { 1 } else { 0 };
     host_info!(
         "call_contract completed: success={}, return_data_len={}, gas_used={}",
@@ -219,9 +216,6 @@ where
         gas,
     );
 
-    // Store the return data in the evmhost for later retrieval
-    //evmhost.set_return_data(result.return_data.clone());
-
     let success_code = if result.success { 1 } else { 0 };
     host_info!(
         "call_code completed: success={}, return_data_len={}, gas_used={}",
@@ -309,9 +303,6 @@ where
     // Execute the delegate call using the provider
     let result = evmhost.call_delegate(&target_address, &caller_address, &call_data, gas);
 
-    // Store the return data in the evmhost for later retrieval
-    //evmhost.set_return_data(result.return_data.clone());
-
     let success_code = if result.success { 1 } else { 0 };
     host_info!(
         "call_delegate completed: success={}, return_data_len={}, gas_used={}",
@@ -398,9 +389,6 @@ where
 
     // Execute the static call using the provider
     let result = evmhost.call_static(&target_address, &caller_address, &call_data, gas);
-
-    // Store the return data in the evmhost for later retrieval
-    //evmhost.set_return_data(result.return_data.clone());
 
     let success_code = if result.success { 1 } else { 0 };
     host_info!(
@@ -529,9 +517,6 @@ where
         is_create2_bool,
     );
 
-    // Store the return data in the evmhost for later retrieval
-    //evmhost.set_return_data(result.return_data.clone());
-
     // Write the contract address to memory (or zero address if failed)
     let address_to_write = result.contract_address.unwrap_or([0u8; 20]);
     memory
@@ -555,40 +540,4 @@ where
     );
 
     Ok(success_code)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Note: These tests would require a proper ZenInstance setup
-    // For now, they serve as documentation of expected behavior
-
-    #[test]
-    fn test_contract_call_functions() {
-        // Test that all call functions validate parameters correctly
-        // Test that all call functions return failure in mock environment
-        // Test parameter reading and validation
-    }
-
-    #[test]
-    fn test_contract_creation() {
-        // Test create_contract parameter validation
-        // Test that creation returns failure but writes mock address
-        // Test memory access patterns
-    }
-
-    #[test]
-    fn test_parameter_validation() {
-        // Test negative offsets are rejected
-        // Test out-of-bounds memory access is prevented
-        // Test gas parameter handling
-    }
-
-    #[test]
-    fn test_mock_environment_behavior() {
-        // Test that all functions behave appropriately in mock environment
-        // Test consistent failure return values
-        // Test logging and warning messages
-    }
 }

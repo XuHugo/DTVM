@@ -374,8 +374,3 @@ mod tests {
         assert_eq!(result.len(), 32);
     }
 }
-
-// Include additional comprehensive tests
-// #[cfg(test)]
-// #[path = "crypto_tests.rs"]
-// mod crypto_tests; // Disabled due to type issues

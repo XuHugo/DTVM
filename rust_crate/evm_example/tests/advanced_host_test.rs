@@ -281,8 +281,8 @@ fn test_invalid(executor: &ContractExecutor, context: &mut MockContext) {
 
     assert_eq!(
         hex::encode(&result.return_data),
-        "010203040506",
-        "Invalid should be 010203040506, got {}",
+        "00000000000000000000000000000000000000000000000000000000000003e8",
+        "Invalid should be 00000000000000000000000000000000000000000000000000000000000003e8, got {}",
         hex::encode(&result.return_data)
     );
 }

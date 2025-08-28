@@ -260,32 +260,3 @@ where
     );
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Note: These tests would require a proper ZenInstance setup
-    // For now, they serve as documentation of expected behavior
-
-    #[test]
-    fn test_address_functions() {
-        // Test get_address returns the contract address
-        // Test get_caller returns the caller address
-        // Test get_tx_origin returns the transaction origin
-    }
-
-    #[test]
-    fn test_value_functions() {
-        // Test get_call_value returns the call value
-        // Test get_chain_id returns the chain ID
-        // Test get_external_balance returns balance from provider
-    }
-
-    #[test]
-    fn test_parameter_validation() {
-        // Test that all functions validate their parameters correctly
-        // Test negative offsets are rejected
-        // Test out-of-bounds offsets are rejected
-    }
-}

@@ -77,9 +77,34 @@ where
 
     // Copy call data using the evmhost's copy_call_data method
     // This method handles bounds checking and zero-filling automatically
-    let copied_bytes =
-        evmhost.call_data_copy(&mut buffer, data_offset as usize, length_u32 as usize);
+    let call_data = evmhost.call_data_copy();
+    let dest_len = buffer.len();
 
+    // Calculate how much we can actually copy
+    let available_from_offset = if (data_offset as usize) < call_data.len() {
+        call_data.len() - data_offset as usize
+    } else {
+        0
+    };
+
+    let copied_bytes = std::cmp::min(
+        std::cmp::min(length_u32 as usize, available_from_offset),
+        dest_len,
+    );
+
+    if copied_bytes > 0 {
+        buffer[..copied_bytes]
+            .copy_from_slice(&call_data[data_offset as usize..data_offset as usize + copied_bytes]);
+    }
+
+    // Fill remaining buffer with zeros if needed
+    if copied_bytes < dest_len && copied_bytes < length_u32 as usize {
+        let zero_fill_len =
+            std::cmp::min(length_u32 as usize - copied_bytes, dest_len - copied_bytes);
+        if zero_fill_len > 0 {
+            buffer[copied_bytes..copied_bytes + zero_fill_len].fill(0);
+        }
+    }
     // Write the entire buffer to memory (including any zero-filled portions)
     // This ensures we always write exactly 'length' bytes as requested
     memory
@@ -114,12 +139,12 @@ pub fn get_gas_left<T>(instance: &ZenInstance<T>) -> i64
 where
     T: EvmHost,
 {
-    //let _evmhost = &instance.extra_ctx;
     let gas_left = instance.get_gas_left();
-    //let gas_left = evmhost.get_gas_left();
+    let evmhost = &instance.extra_ctx;
+    let gas_left = evmhost.get_gas_left(gas_left as i64);
 
     host_info!("get_gas_left called, returning: {}", gas_left);
-    gas_left as i64
+    gas_left
 }
 
 /// Get the transaction gas price
@@ -158,33 +183,4 @@ where
         result_offset
     );
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Note: These tests would require a proper ZenInstance setup
-    // For now, they serve as documentation of expected behavior
-
-    #[test]
-    fn test_call_data_functions() {
-        // Test get_call_data_size returns correct size
-        // Test call_data_copy with various offsets and lengths
-        // Test parameter validation for call data functions
-    }
-
-    #[test]
-    fn test_gas_functions() {
-        // Test get_gas_left returns current gas amount
-        // Test get_tx_gas_price writes correct gas price
-        // Test gas price memory access
-    }
-
-    #[test]
-    fn test_parameter_validation() {
-        // Test negative offsets are rejected
-        // Test out-of-bounds memory access is prevented
-        // Test call data bounds checking
-    }
 }

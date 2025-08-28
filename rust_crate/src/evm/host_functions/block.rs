@@ -65,8 +65,8 @@
 
 use crate::core::instance::ZenInstance;
 use crate::evm::error::HostFunctionResult;
-use crate::evm::utils::{validate_address_param, validate_bytes32_param, MemoryAccessor};
 use crate::evm::traits::EvmHost;
+use crate::evm::utils::{validate_address_param, validate_bytes32_param, MemoryAccessor};
 use crate::{host_error, host_info};
 
 /// Get the current block number
@@ -297,38 +297,3 @@ where
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Note: These tests would require a proper ZenInstance setup
-    // For now, they serve as documentation of expected behavior
-
-    #[test]
-    fn test_block_info_functions() {
-        // Test that block info functions return expected values
-        // get_block_number should return the current block number
-        // get_block_timestamp should return the current timestamp
-        // get_block_gas_limit should return the gas limit
-    }
-
-    #[test]
-    fn test_block_hash_validation() {
-        // Test get_block_hash with various block numbers
-        // Should return 0 for invalid block numbers
-        // Should return 1 for valid block numbers
-        // Should write appropriate hash values
-    }
-
-    #[test]
-    fn test_memory_writes() {
-        // Test that coinbase and prev_randao functions write correct data
-        // Test memory validation for all functions
-    }
-}
-
-// Include additional comprehensive tests
-// #[cfg(test)]
-// #[path = "block_tests.rs"]
-// mod block_tests; // Disabled due to type issues

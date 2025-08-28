@@ -17,7 +17,3 @@ sha3 = "0.10"
 [lib]
 name = "evm_example"
 path = "src/lib.rs"
-
-[[bin]]
-name = "main"
-path = "src/main.rs"

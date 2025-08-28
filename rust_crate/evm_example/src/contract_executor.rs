@@ -1,9 +1,9 @@
 // Copyright (C) 2021-2025 the DTVM authors. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! 合约执行器模块
+//! Contract Executor Module
 //!
-//! 提供可复用的合约执行功能，支持部署和调用智能合约
+//! Provides reusable contract execution functionality, supporting smart contract deployment and invocation
 
 use crate::evm_bridge::create_complete_evm_host_functions;
 use crate::mock_context::MockContext;
@@ -11,7 +11,7 @@ use dtvmcore_rust::core::runtime::ZenRuntime;
 use dtvmcore_rust::evm::EvmHost;
 use std::rc::Rc;
 
-/// 合约执行结果
+/// Contract execution result
 #[derive(Debug)]
 pub struct ContractExecutionResult {
     pub success: bool,
@@ -20,100 +20,89 @@ pub struct ContractExecutionResult {
     pub is_reverted: bool,
 }
 
-/// 合约执行器
+/// Contract executor
 pub struct ContractExecutor {
     runtime: Rc<ZenRuntime>,
 }
 
 impl ContractExecutor {
-    /// 创建新的合约执行器
+    /// Create a new contract executor
     pub fn new() -> Result<Self, String> {
-        println!("🔧 创建合约执行器...");
-
-        // 创建运行时
+        // Create runtime
         let rt = ZenRuntime::new(None);
 
-        // 创建EVM主机函数
+        // Create EVM host functions
         let host_funcs = create_complete_evm_host_functions();
-        println!("✓ 创建了 {} 个EVM主机函数", host_funcs.len());
-
-        // 注册主机模块
+        // Register host module
         let _host_module = rt
             .create_host_module("env", host_funcs.iter(), true)
-            .map_err(|e| format!("主机模块创建失败: {}", e))?;
-        println!("✓ EVM主机模块注册成功");
+            .map_err(|e| format!("Host module creation failed: {}", e))?;
 
         Ok(ContractExecutor { runtime: rt })
     }
 
-    /// 部署合约
+    /// Deploy contract
     pub fn deploy_contract(
         &self,
         contract_name: &str,
         context: &mut MockContext,
     ) -> Result<(), String> {
-        // 加载WASM文件
-        let wasm_bytes = context.get_contract_code();
-        println!("✓ WASM文件加载完成: {} 字节", wasm_bytes.len());
+        // Load WASM file
+        let wasm_bytes = context.code_copy();
 
         let wasm_mod = self
             .runtime
             .load_module_from_bytes(contract_name, &wasm_bytes)
-            .map_err(|e| format!("加载WASM模块失败: {}", e))?;
-        println!("✓ WASM模块加载成功");
+            .map_err(|e| format!("Failed to load WASM module: {}", e))?;
 
-        // 部署合约
+        // Deploy contract
         let isolation = self
             .runtime
             .new_isolation()
-            .map_err(|e| format!("创建隔离环境失败: {}", e))?;
+            .map_err(|e| format!("Failed to create isolation: {}", e))?;
 
         let inst = wasm_mod
-            .new_instance_with_context(isolation, 1000000, context.clone())
-            .map_err(|e| format!("创建实例失败: {}", e))?;
+            .new_instance_with_context(isolation, context.get_gas_limit() as u64, context.clone())
+            .map_err(|e| format!("Failed to create instance: {}", e))?;
 
         inst.call_wasm_func("deploy", &[])
-            .map_err(|e| format!("部署合约失败: {}", e))?;
+            .map_err(|e| format!("Failed to deploy contract: {}", e))?;
 
-        println!("✓ {} 合约部署成功", contract_name);
         Ok(())
     }
 
-    /// 调用合约函数
+    /// Call contract function
     pub fn call_contract_function(
         &self,
         contract_name: &str,
         context: &mut MockContext,
     ) -> Result<ContractExecutionResult, String> {
-        // 加载WASM模块
-        let wasm_bytes = context.get_contract_code();
+        // Load WASM module
+        let wasm_bytes = context.code_copy();
 
         let wasm_mod = self
             .runtime
             .load_module_from_bytes(contract_name, &wasm_bytes)
-            .map_err(|e| format!("加载WASM模块失败: {}", e))?;
+            .map_err(|e| format!("Failed to load WASM module: {}", e))?;
 
-        // 创建隔离环境并调用
+        // Create isolation and call
         let isolation = self
             .runtime
             .new_isolation()
-            .map_err(|e| format!("创建隔离环境失败: {}", e))?;
+            .map_err(|e| format!("Failed to create isolation: {}", e))?;
 
         let inst = wasm_mod
-            .new_instance_with_context(isolation, 1000000, context.clone())
-            .map_err(|e| format!("创建实例失败: {}", e))?;
+            .new_instance_with_context(isolation, context.get_gas_limit() as u64, context.clone())
+            .map_err(|e| format!("Failed to create instance: {}", e))?;
 
-        // 执行函数调用
+        // Execute function call
         match inst.call_wasm_func("call", &[]) {
             Ok(_) => {
                 let is_reverted = context.is_reverted();
 
                 if is_reverted {
-                    println!("⚠️ 函数执行被回滚");
                     let return_data = if context.has_return_data() {
-                        let data = context.return_data_copy();
-                        println!("   📝 回滚数据: {}", context.get_return_data_hex());
-                        data
+                        context.return_data_copy()
                     } else {
                         vec![]
                     };
@@ -125,14 +114,9 @@ impl ContractExecutor {
                         is_reverted: true,
                     })
                 } else {
-                    println!("✓ 函数执行成功");
-
                     let return_data = if context.has_return_data() {
-                        let data = context.return_data_copy();
-                        println!("   ✅ 返回数据: {}", context.get_return_data_hex());
-                        data
+                        context.return_data_copy()
                     } else {
-                        println!("   ℹ️ 无返回数据");
                         vec![]
                     };
 
@@ -144,15 +128,136 @@ impl ContractExecutor {
                     })
                 }
             }
-            Err(err) => {
-                println!("❌ 函数执行失败: {}", err);
+            Err(err) => Ok(ContractExecutionResult {
+                success: false,
+                return_data: vec![],
+                error_message: Some(err.to_string()),
+                is_reverted: context.is_reverted(),
+            }),
+        }
+    }
+}
 
-                Ok(ContractExecutionResult {
-                    success: false,
-                    return_data: vec![],
-                    error_message: Some(err.to_string()),
-                    is_reverted: context.is_reverted(),
-                })
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mock_context::MockContext;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    #[test]
+    fn test_deploy_contract_with_counter() {
+        // Load counter.wasm file for testing
+        let counter_wasm = std::fs::read("../example/counter.wasm")
+            .expect("⚠️ Counter WASM file not found, skipping test");
+
+        let executor = ContractExecutor::new().expect("Failed to create executor");
+        let shared_storage = Rc::new(RefCell::new(HashMap::new()));
+
+        let mut context = MockContext::builder()
+            .with_code(counter_wasm)
+            .with_storage(shared_storage)
+            .with_address([0x42; 20])
+            .with_gas_limit(1000000)
+            .build();
+
+        // Test contract deployment
+        let result = executor.deploy_contract("counter", &mut context);
+
+        match result {
+            Ok(_) => {
+                assert!(true);
+            }
+            Err(_) => {
+                panic!("Counter deployment should succeed");
+            }
+        }
+    }
+
+    #[test]
+    fn test_call_contract_function_with_counter() {
+        // Load counter.wasm file for testing
+        let counter_wasm = std::fs::read("../example/counter.wasm")
+            .expect("⚠️ Counter WASM file not found, skipping test");
+
+        let executor = ContractExecutor::new().expect("Failed to create executor");
+        let shared_storage = Rc::new(RefCell::new(HashMap::new()));
+
+        // Counter contract function selectors
+        const COUNT_SELECTOR: [u8; 4] = [0x06, 0x66, 0x1a, 0xbd]; // count()
+        const INCREASE_SELECTOR: [u8; 4] = [0xe8, 0x92, 0x7f, 0xbc]; // increase()
+
+        // Test 1: Call count() function (should return 0 initially)
+        let mut context = MockContext::builder()
+            .with_code(counter_wasm.clone())
+            .with_storage(shared_storage.clone())
+            .with_address([0x42; 20])
+            .with_gas_limit(1000000)
+            .build();
+
+        context.set_call_data(COUNT_SELECTOR.to_vec());
+        let result = executor.call_contract_function("counter", &mut context);
+
+        match result {
+            Ok(execution_result) => {
+                assert_eq!(
+                    execution_result.return_data,
+                    vec![
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, 0, 0
+                    ],
+                    "Initial counter should be 0"
+                );
+                assert!(
+                    execution_result.success,
+                    "Counter count() call should succeed"
+                );
+            }
+            Err(err) => {
+                panic!("Counter count() call failed: {}", err);
+            }
+        }
+
+        // Test 2: Call increase() function
+        context.set_call_data(INCREASE_SELECTOR.to_vec());
+
+        let result2 = executor.call_contract_function("counter", &mut context);
+
+        match result2 {
+            Ok(execution_result) => {
+                assert!(
+                    execution_result.success,
+                    "Counter increase() call should succeed"
+                );
+            }
+            Err(err) => {
+                panic!("Counter increase() call failed: {}", err);
+            }
+        }
+
+        // Test 3: Call count() again to verify the increase worked
+        context.set_call_data(COUNT_SELECTOR.to_vec());
+
+        let result3 = executor.call_contract_function("counter", &mut context);
+
+        match result3 {
+            Ok(execution_result) => {
+                assert_eq!(
+                    execution_result.return_data,
+                    vec![
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, 0, 1
+                    ],
+                    "Counter should be 1 after increase"
+                );
+                assert!(
+                    execution_result.success,
+                    "Counter count() call should succeed"
+                );
+            }
+            Err(err) => {
+                panic!("Counter count() call after increase failed: {}", err);
             }
         }
     }

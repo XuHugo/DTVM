@@ -72,8 +72,34 @@ where
     let mut buffer = vec![0u8; length_u32 as usize];
 
     // Copy code using the evmhost's copy_code method
-    let copied_bytes = evmhost.code_copy(&mut buffer, code_offset as usize, length_u32 as usize);
+    let code = evmhost.code_copy();
+    let dest_len = buffer.len();
 
+    // Calculate how much we can actually copy
+    let available_from_offset = if (code_offset as usize) < code.len() {
+        code.len() - code_offset as usize
+    } else {
+        0
+    };
+
+    let copied_bytes = std::cmp::min(
+        std::cmp::min(length_u32 as usize, available_from_offset),
+        dest_len,
+    );
+
+    if copied_bytes > 0 {
+        buffer[..copied_bytes]
+            .copy_from_slice(&code[code_offset as usize..code_offset as usize + copied_bytes]);
+    }
+
+    // Fill remaining buffer with zeros if needed
+    if copied_bytes < dest_len && copied_bytes < length_u32 as usize {
+        let zero_fill_len =
+            std::cmp::min(length_u32 as usize - copied_bytes, dest_len - copied_bytes);
+        if zero_fill_len > 0 {
+            buffer[copied_bytes..copied_bytes + zero_fill_len].fill(0);
+        }
+    }
     // Write the copied data to memory
     memory
         .write_bytes(result_offset_u32, &buffer[..copied_bytes])
@@ -364,40 +390,5 @@ where
             );
             Ok(())
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Note: These tests would require a proper ZenInstance setup
-    // For now, they serve as documentation of expected behavior
-
-    #[test]
-    fn test_code_size_functions() {
-        // Test get_code_size returns the correct size
-        // Test get_external_code_size with various addresses
-    }
-
-    #[test]
-    fn test_code_copy_functions() {
-        // Test code_copy with various offsets and lengths
-        // Test external_code_copy with boundary conditions
-        // Test parameter validation for all copy functions
-    }
-
-    #[test]
-    fn test_external_code_functions() {
-        // Test get_external_code_hash returns consistent hashes
-        // Test external code operations with invalid addresses
-        // Test mock external code behavior
-    }
-
-    #[test]
-    fn test_parameter_validation() {
-        // Test negative offsets are rejected
-        // Test out-of-bounds memory access is prevented
-        // Test address parameter validation
     }
 }

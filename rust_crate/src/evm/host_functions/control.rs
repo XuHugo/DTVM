@@ -112,7 +112,7 @@ where
 
     // Store the revert data in the Mockevmhost so it can be accessed externally
     let evmhost = &instance.extra_ctx;
-    evmhost.set_reverted(revert_data.clone());
+    evmhost.revert(revert_data.clone());
 
     host_info!(
         "revert: revert data stored in evmhost, hex: 0x{}",
@@ -144,7 +144,7 @@ where
 
     // Store the revert data in the Mockevmhost so it can be accessed externally
     let evmhost = &instance.extra_ctx;
-    evmhost.set_reverted(vec![1, 2, 3, 4, 5, 6]);
+    evmhost.invalid();
 
     // Invalid operation - exit with code 2 (invalid operation)
     host_error!("invalid: invalid EVM operation, exiting with code 2");
@@ -326,39 +326,4 @@ where
         result_offset
     );
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Note: These tests would require a proper ZenInstance setup
-    // For now, they serve as documentation of expected behavior
-
-    #[test]
-    fn test_execution_control_functions() {
-        // Test that finish, revert, invalid, and self_destruct all return errors
-        // These errors indicate execution termination, not actual failures
-    }
-
-    #[test]
-    fn test_return_data_functions() {
-        // Test get_return_data_size returns 0 in mock environment
-        // Test return_data_copy fills memory with zeros
-        // Test parameter validation for return data functions
-    }
-
-    #[test]
-    fn test_parameter_validation() {
-        // Test negative offsets are rejected
-        // Test out-of-bounds memory access is prevented
-        // Test address parameter validation for self_destruct
-    }
-
-    #[test]
-    fn test_termination_behavior() {
-        // Test that control functions properly signal termination
-        // Test error messages are appropriate
-        // Test logging behavior
-    }
 }

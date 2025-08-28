@@ -4,8 +4,7 @@
 //! Error Handling System for EVM Host Functions
 //!
 //! This module provides a comprehensive error handling system for EVM host function operations.
-//! It includes error types, severity classification, and utility functions for creating
-//! context-aware error messages.
+//! It includes error types and utility functions for creating context-aware error messages.
 //!
 //! # Error Categories
 //!
@@ -18,14 +17,6 @@
 //! - **Crypto Errors** - Cryptographic operation failures
 //! - **Arithmetic Errors** - Mathematical operation errors (division by zero, overflow)
 //!
-//! # Error Severity
-//!
-//! Errors are classified by severity to help with error handling decisions:
-//! - **Low** - Minor issues that can be easily recovered from
-//! - **Medium** - Moderate issues that may require retry or alternative handling
-//! - **High** - Serious issues that prevent normal operation but don't terminate execution
-//! - **Critical** - Fatal errors that require immediate termination
-//!
 //! # Usage
 //!
 //! ```rust
@@ -35,9 +26,10 @@
 //! let gas_error = gas_error("Insufficient gas", "expensive_operation", Some(50000), Some(10000));
 //! let storage_error = storage_error("Key not found", "storage_load", Some("0x1234"));
 //!
-//! // Check error properties
-//! if gas_error.is_recoverable() {
-//!     println!("Error can be handled: {}", gas_error);
+//! // Handle errors
+//! match some_operation() {
+//!     Ok(result) => println!("Success: {:?}", result),
+//!     Err(e) => println!("Error: {}", e),
 //! }
 //! ```
 
@@ -273,35 +265,7 @@ pub fn arithmetic_error(message: &str, function: &str, operation: &str) -> HostF
     }
 }
 
-/// Error severity levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErrorSeverity {
-    /// Low severity - operation can continue
-    Low,
-    /// Medium severity - operation should be retried or handled gracefully
-    Medium,
-    /// High severity - operation must be aborted
-    High,
-    /// Critical severity - execution must be terminated
-    Critical,
-}
-
 impl HostFunctionError {
-    /// Get the severity level of this error
-    pub fn severity(&self) -> ErrorSeverity {
-        match self {
-            HostFunctionError::OutOfBounds { .. } => ErrorSeverity::High,
-            HostFunctionError::InvalidParameter { .. } => ErrorSeverity::Medium,
-            HostFunctionError::ContextNotFound { .. } => ErrorSeverity::Critical,
-            HostFunctionError::MemoryAccessError { .. } => ErrorSeverity::High,
-            HostFunctionError::ExecutionError { .. } => ErrorSeverity::Critical,
-            HostFunctionError::GasError { .. } => ErrorSeverity::Medium,
-            HostFunctionError::StorageError { .. } => ErrorSeverity::Medium,
-            HostFunctionError::CallError { .. } => ErrorSeverity::Medium,
-            HostFunctionError::CryptoError { .. } => ErrorSeverity::Medium,
-            HostFunctionError::ArithmeticError { .. } => ErrorSeverity::Medium,
-        }
-    }
 
     /// Get the function name where this error occurred
     pub fn function(&self) -> &str {
@@ -335,16 +299,6 @@ impl HostFunctionError {
         }
     }
 
-    /// Check if this error indicates execution should be terminated
-    pub fn is_terminal(&self) -> bool {
-        matches!(self.severity(), ErrorSeverity::Critical)
-    }
-
-    /// Check if this error is recoverable
-    pub fn is_recoverable(&self) -> bool {
-        matches!(self.severity(), ErrorSeverity::Low | ErrorSeverity::Medium)
-    }
-
     /// Get error category as string
     pub fn category(&self) -> &'static str {
         match self {
@@ -367,25 +321,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_error_severity() {
+    fn test_error_properties() {
         let out_of_bounds = out_of_bounds_error(0, 10, "test");
-        assert_eq!(out_of_bounds.severity(), ErrorSeverity::High);
-        assert!(!out_of_bounds.is_terminal());
-        assert!(!out_of_bounds.is_recoverable());
-
-        let execution_error = execution_error("test error", "test_function");
-        assert_eq!(execution_error.severity(), ErrorSeverity::Critical);
-        assert!(execution_error.is_terminal());
-        assert!(!execution_error.is_recoverable());
+        assert_eq!(out_of_bounds.function(), "unknown");
+        assert_eq!(out_of_bounds.category(), "memory");
 
         let gas_error = gas_error("insufficient gas", "test_function", Some(1000), Some(500));
-        assert_eq!(gas_error.severity(), ErrorSeverity::Medium);
-        assert!(!gas_error.is_terminal());
-        assert!(gas_error.is_recoverable());
-    }
+        assert_eq!(gas_error.function(), "test_function");
+        assert_eq!(gas_error.message(), "insufficient gas");
+        assert_eq!(gas_error.category(), "gas");
 
-    #[test]
-    fn test_error_properties() {
         let error = storage_error("key not found", "storage_load", Some("0x1234"));
         assert_eq!(error.function(), "storage_load");
         assert_eq!(error.message(), "key not found");

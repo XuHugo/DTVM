@@ -8,8 +8,6 @@ use crate::evm::error::HostFunctionResult;
 use crate::evm::traits::EvmHost;
 use crate::evm::utils::{format_hex, validate_bytes32_param, MemoryAccessor};
 use crate::{host_error, host_info};
-use num_bigint::BigUint;
-use num_traits::{One, Zero};
 
 /// Modular addition: (a + b) % n
 /// Computes the modular addition of two 256-bit numbers
@@ -280,83 +278,3 @@ fn validate_modular_params(
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Note: These tests would require a proper ZenInstance setup
-    // For now, they serve as documentation of expected behavior
-
-    #[test]
-    fn test_validate_modular_params() {
-        // Valid parameters
-        assert!(validate_modular_params(0, 32, 64, 96).is_ok());
-        assert!(validate_modular_params(100, 132, 164, 196).is_ok());
-
-        // Invalid parameters
-        assert!(validate_modular_params(-1, 32, 64, 96).is_err());
-        assert!(validate_modular_params(0, -1, 64, 96).is_err());
-        assert!(validate_modular_params(0, 32, -1, 96).is_err());
-        assert!(validate_modular_params(0, 32, 64, -1).is_err());
-    }
-
-    #[test]
-    fn test_math_function_behavior() {
-        // Test basic mathematical properties
-        // addmod: (a + b) % n should equal expected result
-        // mulmod: (a * b) % n should equal expected result
-        // expmod: (a ^ b) % n should equal expected result
-
-        // Test with known values
-        let a = BigUint::from(5u32);
-        let b = BigUint::from(3u32);
-        let n = BigUint::from(7u32);
-
-        // addmod: (5 + 3) % 7 = 8 % 7 = 1
-        let add_result = (&a + &b) % &n;
-        assert_eq!(add_result, BigUint::from(1u32));
-
-        // mulmod: (5 * 3) % 7 = 15 % 7 = 1
-        let mul_result = (&a * &b) % &n;
-        assert_eq!(mul_result, BigUint::from(1u32));
-
-        // expmod: (5 ^ 3) % 7 = 125 % 7 = 6
-        let exp_result = a.modpow(&b, &n);
-        assert_eq!(exp_result, BigUint::from(6u32));
-    }
-
-    #[test]
-    fn test_math_edge_cases() {
-        // Test with zero modulus
-        let a = BigUint::from(5u32);
-        let b = BigUint::from(3u32);
-        let zero = BigUint::zero();
-
-        // All operations with zero modulus should return zero
-        //assert_eq!(bigint_to_bytes32(&zero), [0u8; 32]);
-
-        // Test with modulus = 1
-        let one = BigUint::one();
-        let result_mod1 = (&a + &b) % &one;
-        assert_eq!(result_mod1, BigUint::zero());
-
-        // Test expmod edge cases
-        // 0^0 % n (where n > 1) should be 0 in EVM
-        let zero_exp_result = if zero.is_zero() && one > BigUint::one() {
-            BigUint::zero()
-        } else {
-            BigUint::one()
-        };
-        assert_eq!(zero_exp_result, BigUint::zero());
-
-        // a^0 % n should be 1 (unless a=0 and n>1)
-        let any_to_zero = BigUint::from(123u32).modpow(&zero, &BigUint::from(7u32));
-        assert_eq!(any_to_zero, BigUint::one());
-    }
-}
-
-// Include additional comprehensive tests
-// #[cfg(test)]
-// #[path = "math_tests.rs"]
-// mod math_tests; // Disabled due to type issues

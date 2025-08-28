@@ -2,20 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! EVM ABI Mock Host Functions Implementation
-//! 
+//!
 //! This module provides a complete implementation of EVM host functions
 //! for testing and development purposes in a WASM environment.
 
-pub mod host_functions;
-pub mod utils;
 pub mod error;
+pub mod host_functions;
 pub mod traits;
+pub mod utils;
 
-//#[cfg(test)]
-//pub mod tests;
+
 
 // Re-export main types for convenience
-pub use host_functions::*;
 pub use error::{HostFunctionError, HostFunctionResult};
-pub use utils::{MemoryAccessor, format_hex, init_logging};
+pub use host_functions::*;
 pub use traits::*;
+pub use utils::{format_hex, init_logging, MemoryAccessor};
