@@ -3,340 +3,483 @@
 
 //! BaseInfo Contract EVM Host Functions Integration Test
 //!
-//! This test verifies the BaseInfo.wasm smart contract EVM host functions:
-//! - getAddress: Get contract address
-//! - getBlockHash: Get block hash by number
-//! - getChainId: Get chain ID
-//! - getGasLeft: Get remaining gas
-//! - getBlockGasLimit: Get block gas limit
-//! - getBlockNumber: Get current block number
-//! - getTxOrigin: Get transaction origin
-//! - getBlockTimestamp: Get block timestamp
-//! - getBlobBaseFee: Get blob base fee
-//! - getBaseFee: Get base fee
-//! - getBlockCoinbase: Get block coinbase address
-//! - getTxGasPrice: Get transaction gas price
-//! - getBlockPrevRandao: Get previous randao
-//! - sha256: SHA256 hash function
-#![allow(dead_code)]
+//! This test suite verifies the BaseHostFunctions.wasm smart contract EVM host functions:
+//! - Contract address retrieval
+//! - Block information (number, timestamp, gas limit, coinbase, hash)
+//! - Transaction information (origin, gas price, gas left)
+//! - Chain information (chain ID, base fee, blob base fee, prev randao)
+//! - Cryptographic functions (SHA256)
 
 mod common;
 
+use common::calldata::{set_call_data_with_params, ParamBuilder};
 use common::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-// BaseInfo contract function selectors
-const GET_ADDRESS_INFO_SELECTOR: [u8; 4] = [0x4f, 0x2a, 0x36, 0xab]; // getAddressInfo()
-const GET_BLOCK_NUM_SELECTOR: [u8; 4] = [0x7f, 0x6c, 0x6f, 0x10]; // getBlockNum()
-const GET_TIMESTAMP_SELECTOR: [u8; 4] = [0x18, 0x8e, 0xc3, 0x56]; // getTimestamp()
-const GET_GAS_LIMIT_SELECTOR: [u8; 4] = [0x1a, 0x93, 0xd1, 0xc3]; // getGasLimit()
-const GET_COINBASE_SELECTOR: [u8; 4] = [0xd1, 0xa8, 0x2a, 0x9d]; // getCoinbase()
-const GET_ORIGIN_SELECTOR: [u8; 4] = [0xdf, 0x1f, 0x29, 0xee]; // getOrigin()
-const GET_GAS_PRICE_SELECTOR: [u8; 4] = [0xab, 0x70, 0xfd, 0x69]; // getGasprice()
-const GET_GAS_LEFT_SELECTOR: [u8; 4] = [0xed, 0xb4, 0xb8, 0x65]; // getGasleft()
-const GET_CHAIN_INFO_SELECTOR: [u8; 4] = [0x21, 0xca, 0xe4, 0x83]; // getChainInfo()
-const GET_BASE_FEE_SELECTOR: [u8; 4] = [0x15, 0xe8, 0x12, 0xad]; // getBaseFee()
-const GET_BLOB_BASE_FEE_SELECTOR: [u8; 4] = [0x1f, 0x6d, 0x6e, 0xf7]; // getBlobBaseFee()
-const GET_HASH_INFO_SELECTOR: [u8; 4] = [0x65, 0x8c, 0xb4, 0x73]; // getblockHash(uint256)
-const TEST_SHA256_SELECTOR: [u8; 4] = [0xd0, 0x20, 0xae, 0xb7]; // testSha256(bytes)
-const GET_PREV_RANDAO_SELECTOR: [u8; 4] = [0xf4, 0xc3, 0xa9, 0xb8]; // getPrevRandao()
+// Test constants for better maintainability and type safety
+const TEST_BLOCK_NUMBER: u64 = 12_345;
+const TEST_TIMESTAMP: u64 = 1_640_995_200; // 2022-01-01 00:00:00 UTC
+const TEST_GAS_LIMIT: u64 = 30_000_000;
+const TEST_GAS_PRICE: u64 = 20_000_000_000; // 20 gwei
+const TEST_BASE_FEE: u64 = 10_000_000_000; // 10 gwei
+const TEST_BLOB_BASE_FEE: u64 = 1_000_000_000; // 1 gwei
+const TEST_CHAIN_ID: u64 = 1; // Ethereum mainnet
+const TEST_GAS_LEFT: u64 = 100;
+const TEST_CONTRACT_ADDRESS_ID: u8 = 5;
+const TEST_OWNER_ADDRESS_ID: u8 = 1;
+const TEST_COINBASE_ADDRESS_ID: u8 = 99;
+const TEST_BLOCK_HASH_QUERY: u64 = 12_344; // Previous block
 
-#[test]
-fn test_base_info_contract() {
-    // Load BaseInfo WASM module
-    let base_info_wasm_bytes = load_wasm_file("../example/BaseHostFunctions.wasm")
-        .expect("Failed to load BaseHostFunctions.wasm");
+const TEST_PREV_RANDAO: [u8; 32] = [
+    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+    0x99, 0xaa, 0xbb, 0xcc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x99,
+];
 
-    // Create shared storage for the test
-    let shared_storage = Rc::new(RefCell::new(HashMap::new()));
+// Expected test results as constants
+const EXPECTED_PREV_RANDAO_HEX: &str =
+    "000000000000000000000000123456789abcdef0112233445566778899aabbcc";
+const EXPECTED_BLOCK_HASH_HEX: &str =
+    "ab000000000000000000000000000000000000000000000000000000000000cd";
+const EXPECTED_SHA256_HASH_HEX: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000";
 
-    // Create contract executor
-    let executor = ContractExecutor::new().expect("Failed to create contract executor");
+// Function selectors - organized by category
+mod selectors {
+    // Address and contract info
+    pub const GET_ADDRESS_INFO: [u8; 4] = [0x4f, 0x2a, 0x36, 0xab]; // getAddressInfo()
 
-    // Create test addresses
-    let owner_address = random_test_address(1);
-    let coinbase_address = random_test_address(99);
+    // Block information
+    pub const GET_BLOCK_NUM: [u8; 4] = [0x7f, 0x6c, 0x6f, 0x10]; // getBlockNum()
+    pub const GET_TIMESTAMP: [u8; 4] = [0x18, 0x8e, 0xc3, 0x56]; // getTimestamp()
+    pub const GET_GAS_LIMIT: [u8; 4] = [0x1a, 0x93, 0xd1, 0xc3]; // getGasLimit()
+    pub const GET_COINBASE: [u8; 4] = [0xd1, 0xa8, 0x2a, 0x9d]; // getCoinbase()
+    pub const GET_BLOCK_HASH: [u8; 4] = [0x65, 0x8c, 0xb4, 0x73]; // getblockHash(uint256)
+    pub const GET_PREV_RANDAO: [u8; 4] = [0xf4, 0xc3, 0xa9, 0xb8]; // getPrevRandao()
 
-    // Set base fee (10 gwei)
-    let mut base_fee = [0u8; 32];
-    base_fee[24..32].copy_from_slice(&10000000000u64.to_be_bytes());
+    // Transaction information
+    pub const GET_ORIGIN: [u8; 4] = [0xdf, 0x1f, 0x29, 0xee]; // getOrigin()
+    pub const GET_GAS_PRICE: [u8; 4] = [0xab, 0x70, 0xfd, 0x69]; // getGasprice()
+    pub const GET_GAS_LEFT: [u8; 4] = [0xed, 0xb4, 0xb8, 0x65]; // getGasleft()
 
-    // Set blob base fee (1 gwei)
-    let mut blob_base_fee = [0u8; 32];
-    blob_base_fee[24..32].copy_from_slice(&1000000000u64.to_be_bytes());
+    // Chain information
+    pub const GET_CHAIN_INFO: [u8; 4] = [0x21, 0xca, 0xe4, 0x83]; // getChainInfo()
+    pub const GET_BASE_FEE: [u8; 4] = [0x15, 0xe8, 0x12, 0xad]; // getBaseFee()
+    pub const GET_BLOB_BASE_FEE: [u8; 4] = [0x1f, 0x6d, 0x6e, 0xf7]; // getBlobBaseFee()
 
-    // Create a MockContext with comprehensive test data
-    let mut context = MockContext::builder()
-        .with_storage(shared_storage.clone())
-        .with_code(base_info_wasm_bytes)
-        .with_caller(owner_address)
-        .with_address(random_test_address(5)) // Contract address
-        .with_block_number(12345)
-        .with_block_timestamp(1640995200) // 2022-01-01 00:00:00 UTC
-        .with_block_gas_limit(30000000)
-        .with_block_coinbase(coinbase_address)
-        .with_base_fee([0u8; 32])
-        .with_blob_base_fee([0u8; 32])
-        .with_block_prev_randao([
-            0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
-            0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x12, 0x34, 0x56, 0x78,
-            0x9a, 0xbc, 0xde, 0xf0,
-        ])
-        .with_base_fee(base_fee)
-        .with_blob_base_fee(blob_base_fee)
-        .with_chain_id_u64(1) // Ethereum mainnet
-        .with_tx_origin(owner_address)
-        .with_gas_price_wei(20000000000) // 20 gwei
-        .build();
-    // Deploy contract
-
-    executor
-        .deploy_contract("base_info", &mut context)
-        .expect("Failed to deploy contract");
-
-    // Test various functions
-    test_address_info(&executor, &mut context);
-    test_block_num(&executor, &mut context);
-    test_timestamp(&executor, &mut context);
-    test_gas_limit(&executor, &mut context);
-    test_coinbase(&executor, &mut context);
-    test_origin(&executor, &mut context);
-    test_gas_price(&executor, &mut context);
-    test_gas_left(&executor, &mut context);
-    test_chain_info(&executor, &mut context);
-    test_base_fee(&executor, &mut context);
-    test_blob_base_fee(&executor, &mut context);
-    test_prevdandao(&executor, &mut context);
-    test_blockhash(&executor, &mut context);
+    // Cryptographic functions
+    pub const TEST_SHA256: [u8; 4] = [0xd0, 0x20, 0xae, 0xb7]; // testSha256(bytes)
 }
 
-fn test_address_info(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_ADDRESS_INFO_SELECTOR, vec![]);
+/// Test fixture for BaseInfo contract tests
+struct BaseInfoTestFixture {
+    executor: ContractExecutor,
+    wasm_bytes: Vec<u8>,
+}
 
-    let result = executor
-        .call_contract_function("base_info", context)
+impl BaseInfoTestFixture {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let wasm_bytes = load_wasm_file("../example/BaseHostFunctions.wasm")?;
+        let executor = ContractExecutor::new()?;
+
+        Ok(Self {
+            executor,
+            wasm_bytes,
+        })
+    }
+
+    fn create_context(&self) -> MockContext {
+        MockContext::builder()
+            .with_storage(Rc::new(RefCell::new(HashMap::new())))
+            .with_code(self.wasm_bytes.clone())
+            .build()
+    }
+
+    fn deploy_contract(&self, context: &mut MockContext) -> Result<(), Box<dyn std::error::Error>> {
+        self.executor.deploy_contract("base_info", context)?;
+        Ok(())
+    }
+
+    fn call_function(
+        &self,
+        context: &mut MockContext,
+        selector: &[u8; 4],
+        params: Vec<ethabi::Token>,
+    ) -> Result<evm_example::contract_executor::ContractExecutionResult, Box<dyn std::error::Error>>
+    {
+        set_call_data_with_params(context, selector, params);
+        Ok(self.executor.call_contract_function("base_info", context)?)
+    }
+}
+
+/// Main integration test for BaseInfo contract
+#[test]
+fn test_base_info_contract() {
+    let fixture = BaseInfoTestFixture::new().expect("Failed to create test fixture");
+    let mut context = fixture.create_context();
+
+    fixture
+        .deploy_contract(&mut context)
+        .expect("Failed to deploy contract");
+
+    // Run all test cases
+    test_address_info(&fixture);
+    test_block_number(&fixture);
+    test_block_timestamp(&fixture);
+    test_gas_limit(&fixture);
+    test_coinbase(&fixture);
+    test_transaction_origin(&fixture);
+    test_gas_price(&fixture);
+    test_gas_left(&fixture);
+    test_chain_id(&fixture);
+    test_base_fee(&fixture);
+    test_blob_base_fee(&fixture);
+    test_prev_randao(&fixture);
+    test_block_hash(&fixture);
+    test_sha256_function(&fixture);
+}
+
+/// Test contract address retrieval
+fn test_address_info(fixture: &BaseInfoTestFixture) {
+    let expected_address = random_test_address(TEST_CONTRACT_ADDRESS_ID);
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .with_address(expected_address)
+        .build();
+
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_ADDRESS_INFO, vec![])
         .expect("Failed to call getAddressInfo");
 
     assert!(result.success, "getAddressInfo should succeed");
-    let count_value = decode_address(&result.return_data).unwrap();
+
+    let actual_address =
+        decode_address(&result.return_data).expect("Failed to decode address from return data");
+
     assert_eq!(
-        count_value,
-        random_test_address(5),
-        "Address should be  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5], got {:?}",
-        count_value
+        actual_address, expected_address,
+        "Contract address mismatch: expected {:?}, got {:?}",
+        expected_address, actual_address
     );
 }
 
-fn test_block_num(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_BLOCK_NUM_SELECTOR, vec![]);
+/// Test block number retrieval
+fn test_block_number(fixture: &BaseInfoTestFixture) {
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .with_block_number(TEST_BLOCK_NUMBER as i64)
+        .build();
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_BLOCK_NUM, vec![])
         .expect("Failed to call getBlockNum");
 
     assert!(result.success, "getBlockNum should succeed");
-    let count_value = decode_uint256(&result.return_data).unwrap();
+
+    let block_number = decode_uint256(&result.return_data)
+        .expect("Failed to decode block number from return data");
+
     assert_eq!(
-        count_value, 12345,
-        "Block num should be 12345, got {}",
-        count_value
+        block_number, TEST_BLOCK_NUMBER,
+        "Block number mismatch: expected {}, got {}",
+        TEST_BLOCK_NUMBER, block_number
     );
 }
 
-fn test_timestamp(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_TIMESTAMP_SELECTOR, vec![]);
+/// Test block timestamp retrieval
+fn test_block_timestamp(fixture: &BaseInfoTestFixture) {
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .with_block_timestamp(TEST_TIMESTAMP as i64)
+        .build();
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_TIMESTAMP, vec![])
         .expect("Failed to call getTimestamp");
 
     assert!(result.success, "getTimestamp should succeed");
-    let count_value = decode_uint256(&result.return_data).unwrap();
+
+    let timestamp =
+        decode_uint256(&result.return_data).expect("Failed to decode timestamp from return data");
+
     assert_eq!(
-        count_value, 1640995200,
-        "Block num should be 1640995200, got {}",
-        count_value
+        timestamp, TEST_TIMESTAMP,
+        "Timestamp mismatch: expected {} (2022-01-01 00:00:00 UTC), got {}",
+        TEST_TIMESTAMP, timestamp
     );
 }
-fn test_gas_limit(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_GAS_LIMIT_SELECTOR, vec![]);
 
-    let result = executor
-        .call_contract_function("base_info", context)
+/// Test block gas limit retrieval
+fn test_gas_limit(fixture: &BaseInfoTestFixture) {
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .with_block_gas_limit(TEST_GAS_LIMIT as i64)
+        .build();
+
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_GAS_LIMIT, vec![])
         .expect("Failed to call getGasLimit");
 
     assert!(result.success, "getGasLimit should succeed");
-    let count_value = decode_uint256(&result.return_data).unwrap();
+
+    let gas_limit =
+        decode_uint256(&result.return_data).expect("Failed to decode gas limit from return data");
+
     assert_eq!(
-        count_value, 30000000,
-        "Block num should be 30000000, got {}",
-        count_value
+        gas_limit, TEST_GAS_LIMIT,
+        "Gas limit mismatch: expected {}, got {}",
+        TEST_GAS_LIMIT, gas_limit
     );
 }
 
-fn test_coinbase(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_COINBASE_SELECTOR, vec![]);
+/// Test block coinbase address retrieval
+fn test_coinbase(fixture: &BaseInfoTestFixture) {
+    let expected_coinbase = random_test_address(TEST_COINBASE_ADDRESS_ID);
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .with_block_coinbase(expected_coinbase)
+        .build();
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_COINBASE, vec![])
         .expect("Failed to call getCoinbase");
 
     assert!(result.success, "getCoinbase should succeed");
-    let count_value = decode_address(&result.return_data).unwrap();
+
+    let coinbase = decode_address(&result.return_data)
+        .expect("Failed to decode coinbase address from return data");
+
     assert_eq!(
-        count_value,
-        random_test_address(99),
-        "Coinbase should be  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 99], got {:?}",
-        count_value
+        coinbase, expected_coinbase,
+        "Coinbase address mismatch: expected {:?}, got {:?}",
+        expected_coinbase, coinbase
     );
 }
 
-fn test_origin(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_ORIGIN_SELECTOR, vec![]);
+/// Test transaction origin address retrieval
+fn test_transaction_origin(fixture: &BaseInfoTestFixture) {
+    let expected_origin = random_test_address(TEST_OWNER_ADDRESS_ID);
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .with_tx_origin(expected_origin)
+        .build();
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_ORIGIN, vec![])
         .expect("Failed to call getOrigin");
 
     assert!(result.success, "getOrigin should succeed");
-    let count_value = decode_address(&result.return_data).unwrap();
+
+    let origin = decode_address(&result.return_data)
+        .expect("Failed to decode origin address from return data");
+
     assert_eq!(
-        count_value,
-        random_test_address(1),
-        "Origin should be  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], got {:?}",
-        count_value
+        origin, expected_origin,
+        "Transaction origin mismatch: expected {:?}, got {:?}",
+        expected_origin, origin
     );
 }
 
-fn test_gas_price(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_GAS_PRICE_SELECTOR, vec![]);
+/// Test transaction gas price retrieval
+fn test_gas_price(fixture: &BaseInfoTestFixture) {
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .with_gas_price_wei(TEST_GAS_PRICE)
+        .build();
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_GAS_PRICE, vec![])
         .expect("Failed to call getGasprice");
 
     assert!(result.success, "getGasprice should succeed");
-    let count_value = decode_uint256(&result.return_data).unwrap();
+
+    let gas_price =
+        decode_uint256(&result.return_data).expect("Failed to decode gas price from return data");
+
     assert_eq!(
-        count_value, 20000000000,
-        "Gasprice should be 20000000000, got {}",
-        count_value
+        gas_price, TEST_GAS_PRICE,
+        "Gas price mismatch: expected {} wei (20 gwei), got {} wei",
+        TEST_GAS_PRICE, gas_price
     );
 }
 
-fn test_gas_left(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_GAS_LEFT_SELECTOR, vec![]);
+/// Test remaining gas retrieval
+fn test_gas_left(fixture: &BaseInfoTestFixture) {
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .build();
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_GAS_LEFT, vec![])
         .expect("Failed to call getGasleft");
 
     assert!(result.success, "getGasleft should succeed");
-    let count_value = decode_uint256(&result.return_data).unwrap();
+
+    let gas_left =
+        decode_uint256(&result.return_data).expect("Failed to decode gas left from return data");
+
     assert_eq!(
-        count_value, 100,
-        "Gas left should be 100, got {}",
-        count_value
+        gas_left, TEST_GAS_LEFT,
+        "Gas left mismatch: expected {}, got {}",
+        TEST_GAS_LEFT, gas_left
     );
 }
 
-fn test_chain_info(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_CHAIN_INFO_SELECTOR, vec![]);
+/// Test chain ID retrieval
+fn test_chain_id(fixture: &BaseInfoTestFixture) {
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .with_chain_id_u64(TEST_CHAIN_ID)
+        .build();
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_CHAIN_INFO, vec![])
         .expect("Failed to call getChainInfo");
 
     assert!(result.success, "getChainInfo should succeed");
-    let count_value = decode_uint256(&result.return_data).unwrap();
-    assert_eq!(count_value, 1, "ChainId should be 1, got {}", count_value);
+
+    let chain_id =
+        decode_uint256(&result.return_data).expect("Failed to decode chain ID from return data");
+
+    assert_eq!(
+        chain_id, TEST_CHAIN_ID,
+        "Chain ID mismatch: expected {} (Ethereum mainnet), got {}",
+        TEST_CHAIN_ID, chain_id
+    );
 }
 
-fn test_base_fee(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_BASE_FEE_SELECTOR, vec![]);
+/// Test base fee retrieval
+fn test_base_fee(fixture: &BaseInfoTestFixture) {
+    let mut base_fee_bytes = [0u8; 32];
+    base_fee_bytes[24..32].copy_from_slice(&TEST_BASE_FEE.to_be_bytes());
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .with_base_fee(base_fee_bytes)
+        .build();
+
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_BASE_FEE, vec![])
         .expect("Failed to call getBaseFee");
 
     assert!(result.success, "getBaseFee should succeed");
-    let count_value = decode_uint256(&result.return_data).unwrap();
+
+    let base_fee =
+        decode_uint256(&result.return_data).expect("Failed to decode base fee from return data");
+
     assert_eq!(
-        count_value, 10000000000,
-        "BaseFee should be 10000000000, got {}",
-        count_value
+        base_fee, TEST_BASE_FEE,
+        "Base fee mismatch: expected {} wei (10 gwei), got {} wei",
+        TEST_BASE_FEE, base_fee
     );
 }
 
-fn test_blob_base_fee(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_BLOB_BASE_FEE_SELECTOR, vec![]);
+/// Test blob base fee retrieval
+fn test_blob_base_fee(fixture: &BaseInfoTestFixture) {
+    let mut blob_base_fee_bytes = [0u8; 32];
+    blob_base_fee_bytes[24..32].copy_from_slice(&TEST_BLOB_BASE_FEE.to_be_bytes());
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .with_blob_base_fee(blob_base_fee_bytes)
+        .build();
+
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_BLOB_BASE_FEE, vec![])
         .expect("Failed to call getBlobBaseFee");
 
     assert!(result.success, "getBlobBaseFee should succeed");
-    let count_value = decode_uint256(&result.return_data).unwrap();
+
+    let blob_base_fee = decode_uint256(&result.return_data)
+        .expect("Failed to decode blob base fee from return data");
+
     assert_eq!(
-        count_value, 1000000000,
-        "BlobBaseFee should be 1000000000, got {}",
-        count_value
+        blob_base_fee, TEST_BLOB_BASE_FEE,
+        "Blob base fee mismatch: expected {} wei (1 gwei), got {} wei",
+        TEST_BLOB_BASE_FEE, blob_base_fee
     );
 }
 
-fn test_prevdandao(executor: &ContractExecutor, context: &mut MockContext) {
-    set_call_data_with_params(context, &GET_PREV_RANDAO_SELECTOR, vec![]);
+/// Test previous randao retrieval
+fn test_prev_randao(fixture: &BaseInfoTestFixture) {
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .with_block_prev_randao(TEST_PREV_RANDAO)
+        .build();
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_PREV_RANDAO, vec![])
         .expect("Failed to call getPrevRandao");
 
     assert!(result.success, "getPrevRandao should succeed");
-    let count_value = decode_bytes32(&result.return_data).unwrap();
+
+    let prev_randao =
+        decode_bytes32(&result.return_data).expect("Failed to decode prev randao from return data");
+
+    let actual_hex = hex::encode(&prev_randao);
+
     assert_eq!(
-        hex::encode(&count_value),
-        "000000000000000000000000123456789abcdef0112233445566778899aabbcc",
-        "PrevRandao should be 100, got {}",
-        hex::encode(&count_value)
+        actual_hex, EXPECTED_PREV_RANDAO_HEX,
+        "Previous randao mismatch: expected {}, got {}",
+        EXPECTED_PREV_RANDAO_HEX, actual_hex
     );
 }
 
-fn test_blockhash(executor: &ContractExecutor, context: &mut MockContext) {
-    let block_number = 12344u64; // Previous block
-    let params = ParamBuilder::new().uint256(block_number).build();
-    set_call_data_with_params(context, &GET_HASH_INFO_SELECTOR, params);
+/// Test block hash retrieval by block number
+fn test_block_hash(fixture: &BaseInfoTestFixture) {
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .build();
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let params = ParamBuilder::new().uint256(TEST_BLOCK_HASH_QUERY).build();
+
+    let result = fixture
+        .call_function(&mut context, &selectors::GET_BLOCK_HASH, params)
         .expect("Failed to call getblockHash");
 
     assert!(result.success, "getblockHash should succeed");
-    let count_value = decode_bytes32(&result.return_data).unwrap();
+
+    let block_hash =
+        decode_bytes32(&result.return_data).expect("Failed to decode block hash from return data");
+
+    let actual_hex = hex::encode(&block_hash);
+
     assert_eq!(
-        hex::encode(&count_value),
-        "ab000000000000000000000000000000000000000000000000000000000000cd",
-        "BlockHash should be 100, got {}",
-        hex::encode(&count_value)
+        actual_hex, EXPECTED_BLOCK_HASH_HEX,
+        "Block hash mismatch for block {}: expected {}, got {}",
+        TEST_BLOCK_HASH_QUERY, EXPECTED_BLOCK_HASH_HEX, actual_hex
     );
 }
 
-fn test_sha256_function(executor: &ContractExecutor, context: &mut MockContext) {
+/// Test SHA256 cryptographic function
+fn test_sha256_function(fixture: &BaseInfoTestFixture) {
+    let mut context = MockContext::builder()
+        .with_code(fixture.wasm_bytes.clone())
+        .build();
+
     let test_data = b"Hello, DTVM!";
     let params = ParamBuilder::new().bytes(test_data).build();
-    set_call_data_with_params(context, &TEST_SHA256_SELECTOR, params);
 
-    let result = executor
-        .call_contract_function("base_info", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::TEST_SHA256, params)
         .expect("Failed to call testSha256");
 
     assert!(result.success, "testSha256 should succeed");
-    let count_value = decode_bytes32(&result.return_data).unwrap();
+
+    let sha256_hash =
+        decode_bytes32(&result.return_data).expect("Failed to decode SHA256 hash from return data");
+
+    // Note: This appears to be a mock implementation returning zeros
+    // In a real implementation, this would be the actual SHA256 hash
+    let actual_hex = hex::encode(&sha256_hash);
+
     assert_eq!(
-        hex::encode(&count_value),
-        "0000000000000000000000000000000000000000000000000000000000000000",
-        "Sha256 should be 100, got {}",
-        hex::encode(&count_value)
+        actual_hex,
+        EXPECTED_SHA256_HASH_HEX,
+        "SHA256 hash mismatch for input {:?}: expected {}, got {}",
+        std::str::from_utf8(test_data).unwrap_or("invalid UTF-8"),
+        EXPECTED_SHA256_HASH_HEX,
+        actual_hex
     );
 }

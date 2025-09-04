@@ -3,237 +3,355 @@
 
 //! Contract Calls Integration Test
 //!
-//! This test verifies contract-to-contract calls functionality
-//! using ContractCalls.wasm and SimpleTarget.wasm
-#![allow(dead_code)]
+//! This test suite verifies contract-to-contract calls functionality:
+//! - Regular calls between contracts
+//! - Static calls (read-only operations)
+//! - Delegate calls (execution in caller's context)
+//! - Contract creation (CREATE and CREATE2)
 
 mod common;
 
+use common::calldata::{set_call_data_with_params, ParamBuilder};
 use common::*;
 use ethabi::encode;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-#[test]
-fn test_contract_calls() {
-    // Load WASM modules
-    let contract_calls_wasm =
-        load_wasm_file("../example/ContractCalls.wasm").expect("Failed to load ContractCalls.wasm");
-    let simple_target_wasm =
-        load_wasm_file("../example/SimpleTarget.wasm").expect("Failed to load SimpleTarget.wasm");
+// Test constants for better maintainability
+const TEST_SET_VALUE: u64 = 100;
+const TEST_CREATE_VALUE: u64 = 123;
+const TEST_CREATE2_VALUE: u64 = 456;
+const TEST_OWNER_ADDRESS_ID: u8 = 1;
+const TEST_CALLS_CONTRACT_ADDRESS_ID: u8 = 10;
+const TEST_TARGET_CONTRACT_ADDRESS_ID: u8 = 20;
+const TEST_CREATE_RESULT_ADDRESS_ID: u8 = 9;
+const TEST_CREATE2_RESULT_ADDRESS_ID: u8 = 99;
 
-    // Create shared storage for the test
-    let shared_storage = Rc::new(RefCell::new(HashMap::new()));
+const TEST_CREATE2_SALT: [u8; 32] = [
+    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+    0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+];
 
-    // Create contract executor
-    let executor = ContractExecutor::new().expect("Failed to create contract executor");
+// Expected test results as constants
+const EXPECTED_CALL_RETURN_DATA: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    100,
+];
 
-    // Create test addresses
-    let owner_address = random_test_address(1);
-    let calls_contract_address = random_test_address(10);
-    let target_contract_address = random_test_address(20);
+// Function selectors - organized by category
+mod selectors {
+    use crate::calculate_selector;
 
-    // Create a shared contract registry and pre-register both contracts
-    let shared_registry = Rc::new(RefCell::new(HashMap::new()));
-
-    // Pre-register both contracts in the registry
-    {
-        let mut registry = shared_registry.borrow_mut();
-        registry.insert(
-            target_contract_address,
-            ContractInfo::new("SimpleTarget.wasm".to_string(), simple_target_wasm.clone()),
-        );
-        registry.insert(
-            calls_contract_address,
-            ContractInfo::new(
-                "ContractCalls.wasm".to_string(),
-                contract_calls_wasm.clone(),
-            ),
-        );
+    // Contract call operations
+    pub fn test_call() -> [u8; 4] {
+        calculate_selector("testCall(address,bytes)")
     }
 
-    let mut target_context = MockContext::builder()
-        .with_storage(shared_storage.clone())
-        .with_contract_registry(shared_registry.clone())
-        .with_code(simple_target_wasm.clone())
-        .with_caller(owner_address)
-        .with_address(target_contract_address)
-        .build();
+    pub fn test_static_call() -> [u8; 4] {
+        calculate_selector("testStaticCall(address,bytes)")
+    }
 
-    executor
-        .deploy_contract("simple_target", &mut target_context)
-        .expect("Failed to deploy SimpleTarget contract");
+    pub fn test_delegate_call() -> [u8; 4] {
+        calculate_selector("testDelegateCall(address,bytes)")
+    }
 
-    // Deploy ContractCalls contract
-    let mut caller_context = MockContext::builder()
-        .with_storage(shared_storage.clone())
-        .with_contract_registry(shared_registry.clone())
-        .with_code(contract_calls_wasm.clone())
-        .with_caller(owner_address)
-        .with_address(calls_contract_address)
-        .build();
+    // Contract creation operations
+    pub fn test_create() -> [u8; 4] {
+        calculate_selector("testCreate(uint256)")
+    }
 
-    executor
-        .deploy_contract("contract_calls", &mut caller_context)
-        .expect("Failed to deploy ContractCalls contract");
+    pub fn test_create2() -> [u8; 4] {
+        calculate_selector("testCreate2(uint256,bytes32)")
+    }
 
-    // Test contract interactions
-    test_call(&executor, &mut caller_context);
-    test_static_call(&executor, &mut caller_context);
-    test_delegate_call(&executor, &mut caller_context);
-    test_create(&executor, &mut caller_context);
-    test_create2(&executor, &mut caller_context);
+    // Target contract operations
+    pub fn set_value() -> [u8; 4] {
+        calculate_selector("setValue(uint256)")
+    }
+
+    pub fn get_value() -> [u8; 4] {
+        calculate_selector("getValue()")
+    }
 }
 
-fn test_call(executor: &ContractExecutor, context: &mut MockContext) {
+/// Test fixture for ContractCalls integration tests
+struct ContractCallsTestFixture {
+    executor: ContractExecutor,
+    contract_calls_wasm: Vec<u8>,
+    simple_target_wasm: Vec<u8>,
+}
+
+impl ContractCallsTestFixture {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let contract_calls_wasm = load_wasm_file("../example/ContractCalls.wasm")?;
+        let simple_target_wasm = load_wasm_file("../example/SimpleTarget.wasm")?;
+        let executor = ContractExecutor::new()?;
+
+        Ok(Self {
+            executor,
+            contract_calls_wasm,
+            simple_target_wasm,
+        })
+    }
+
+    /// Create a fresh context for each test to ensure isolation
+    fn create_fresh_context(&self) -> Result<MockContext, Box<dyn std::error::Error>> {
+        // Create fresh storage and registry for each test
+        let fresh_storage = Rc::new(RefCell::new(HashMap::new()));
+        let fresh_registry = Rc::new(RefCell::new(HashMap::new()));
+
+        let owner_address = random_test_address(TEST_OWNER_ADDRESS_ID);
+        let calls_contract_address = random_test_address(TEST_CALLS_CONTRACT_ADDRESS_ID);
+        let target_contract_address = random_test_address(TEST_TARGET_CONTRACT_ADDRESS_ID);
+
+        // Pre-register both contracts in the fresh registry
+        {
+            let mut registry = fresh_registry.borrow_mut();
+            registry.insert(
+                target_contract_address,
+                ContractInfo::new(
+                    "SimpleTarget.wasm".to_string(),
+                    self.simple_target_wasm.clone(),
+                ),
+            );
+            registry.insert(
+                calls_contract_address,
+                ContractInfo::new(
+                    "ContractCalls.wasm".to_string(),
+                    self.contract_calls_wasm.clone(),
+                ),
+            );
+        }
+
+        // Deploy target contract first
+        let mut target_context = MockContext::builder()
+            .with_storage(fresh_storage.clone())
+            .with_contract_registry(fresh_registry.clone())
+            .with_code(self.simple_target_wasm.clone())
+            .with_caller(owner_address)
+            .with_address(target_contract_address)
+            .build();
+
+        self.executor
+            .deploy_contract("simple_target", &mut target_context)?;
+
+        // Create and deploy caller contract context
+        let mut caller_context = MockContext::builder()
+            .with_storage(fresh_storage.clone())
+            .with_contract_registry(fresh_registry.clone())
+            .with_code(self.contract_calls_wasm.clone())
+            .with_caller(owner_address)
+            .with_address(calls_contract_address)
+            .build();
+
+        self.executor
+            .deploy_contract("contract_calls", &mut caller_context)?;
+
+        Ok(caller_context)
+    }
+
+    fn call_function(
+        &self,
+        context: &mut MockContext,
+        selector: &[u8; 4],
+        params: Vec<ethabi::Token>,
+    ) -> Result<evm_example::contract_executor::ContractExecutionResult, Box<dyn std::error::Error>>
+    {
+        set_call_data_with_params(context, selector, params);
+        Ok(self
+            .executor
+            .call_contract_function("ContractCalls.wasm", context)?)
+    }
+}
+
+/// Main integration test for contract calls functionality
+#[test]
+fn test_contract_calls() {
+    let fixture = ContractCallsTestFixture::new().expect("Failed to create test fixture");
+
+    // Run all test cases with fresh contexts for each test
+    test_call(&fixture);
+    test_static_call(&fixture);
+    test_delegate_call(&fixture);
+    test_create(&fixture);
+    test_create2(&fixture);
+}
+
+/// Test regular contract call functionality
+fn test_call(fixture: &ContractCallsTestFixture) {
+    let mut context = fixture
+        .create_fresh_context()
+        .expect("Failed to create fresh context");
+
     // Prepare call data for setValue(100) on the target contract
     let target_call_data = {
-        let mut data = calculate_selector("setValue(uint256)").to_vec();
-        data.extend_from_slice(&encode(&ParamBuilder::new().uint256(100).build()));
+        let mut data = selectors::set_value().to_vec();
+        data.extend_from_slice(&encode(
+            &ParamBuilder::new().uint256(TEST_SET_VALUE).build(),
+        ));
         data
     };
 
-    // Use ParamBuilder for testCall(address, bytes)
-    let target_address = random_test_address(20);
+    let target_address = random_test_address(TEST_TARGET_CONTRACT_ADDRESS_ID);
     let params = ParamBuilder::new()
         .address(&target_address)
         .bytes(&target_call_data)
         .build();
 
-    set_call_data_with_params(
-        context,
-        &calculate_selector("testCall(address,bytes)"),
-        params,
-    );
-
-    let result = executor
-        .call_contract_function("ContractCalls.wasm", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::test_call(), params)
         .expect("Failed to call testCall()");
 
     assert!(result.success, "testCall() should succeed");
 
-    // Verify initial count is 0
-    let (success, bytes_data) = decode_call_result(&result.return_data).unwrap();
-    assert_eq!(success, true, "Call should be true, got {}", success);
-    assert_eq!(bytes_data, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100], "return data should be [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100], got {:?}", bytes_data);
-}
-fn test_static_call(executor: &ContractExecutor, context: &mut MockContext) {
-    //  call data for testStaticCall(address target, bytes data)
-    // Prepare call data for getValue() - no parameters needed
-    let target_call_data = calculate_selector("getValue()").to_vec();
+    let (call_success, return_data) =
+        decode_call_result(&result.return_data).expect("Failed to decode call result");
 
-    // Use ParamBuilder for testStaticCall(address, bytes)
-    let target_address = random_test_address(20);
-    let params = ParamBuilder::new()
+    assert!(call_success, "Contract call should succeed");
+    assert_eq!(
+        return_data, EXPECTED_CALL_RETURN_DATA,
+        "Call return data mismatch: expected {:?}, got {:?}",
+        EXPECTED_CALL_RETURN_DATA, return_data
+    );
+}
+/// Test static call functionality (read-only operations)
+fn test_static_call(fixture: &ContractCallsTestFixture) {
+    let mut context = fixture
+        .create_fresh_context()
+        .expect("Failed to create fresh context");
+
+    // First, set a value using regular call so we have something to read
+    let set_call_data = {
+        let mut data = selectors::set_value().to_vec();
+        data.extend_from_slice(&encode(
+            &ParamBuilder::new().uint256(TEST_SET_VALUE).build(),
+        ));
+        data
+    };
+
+    let target_address = random_test_address(TEST_TARGET_CONTRACT_ADDRESS_ID);
+    let set_params = ParamBuilder::new()
         .address(&target_address)
-        .bytes(&target_call_data)
+        .bytes(&set_call_data)
         .build();
 
-    set_call_data_with_params(
-        context,
-        &calculate_selector("testStaticCall(address,bytes)"),
-        params,
-    );
+    // Set the value first
+    let set_result = fixture
+        .call_function(&mut context, &selectors::test_call(), set_params)
+        .expect("Failed to call testCall() for setup");
 
-    let result = executor
-        .call_contract_function("ContractCalls.wasm", context)
+    assert!(set_result.success, "Setup call should succeed");
+
+    // Now test static call to read the value
+    let get_call_data = selectors::get_value().to_vec();
+    let get_params = ParamBuilder::new()
+        .address(&target_address)
+        .bytes(&get_call_data)
+        .build();
+
+    let result = fixture
+        .call_function(&mut context, &selectors::test_static_call(), get_params)
         .expect("Failed to call testStaticCall()");
 
     assert!(result.success, "testStaticCall() should succeed");
 
-    // Verify initial count is 0
-    let (success, bytes_data) = decode_call_result(&result.return_data).unwrap();
-    assert_eq!(success, true, "Static Call should be true, got {}", success);
-    assert_eq!(bytes_data, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100], "return data should be [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100], got {:?}", bytes_data);
+    let (call_success, return_data) =
+        decode_call_result(&result.return_data).expect("Failed to decode static call result");
+
+    assert!(call_success, "Static call should succeed");
+    assert_eq!(
+        return_data, EXPECTED_CALL_RETURN_DATA,
+        "Static call return data mismatch: expected {:?}, got {:?}",
+        EXPECTED_CALL_RETURN_DATA, return_data
+    );
 }
-fn test_delegate_call(executor: &ContractExecutor, context: &mut MockContext) {
+/// Test delegate call functionality (execution in caller's context)
+fn test_delegate_call(fixture: &ContractCallsTestFixture) {
+    let mut context = fixture
+        .create_fresh_context()
+        .expect("Failed to create fresh context");
+
     // Prepare call data for setValue(100) on the target contract
     let target_call_data = {
-        let mut data = calculate_selector("setValue(uint256)").to_vec();
-        data.extend_from_slice(&encode(&ParamBuilder::new().uint256(100).build()));
+        let mut data = selectors::set_value().to_vec();
+        data.extend_from_slice(&encode(
+            &ParamBuilder::new().uint256(TEST_SET_VALUE).build(),
+        ));
         data
     };
 
-    // Use ParamBuilder for testCall(address, bytes)
-    let target_address = random_test_address(20);
+    let target_address = random_test_address(TEST_TARGET_CONTRACT_ADDRESS_ID);
     let params = ParamBuilder::new()
         .address(&target_address)
         .bytes(&target_call_data)
         .build();
 
-    set_call_data_with_params(
-        context,
-        &calculate_selector("testCall(address,bytes)"),
-        params,
-    );
-
-    let result = executor
-        .call_contract_function("ContractCalls.wasm", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::test_delegate_call(), params)
         .expect("Failed to call testDelegateCall()");
 
     assert!(result.success, "testDelegateCall() should succeed");
 
-    // Verify initial count is 0
-    let (success, bytes_data) = decode_call_result(&result.return_data).unwrap();
-    assert_eq!(
-        success, true,
-        "Delegate Call should be true, got {}",
-        success
-    );
-    assert_eq!(bytes_data, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100], "return data should be [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100], got {:?}", bytes_data);
-}
-fn test_create(executor: &ContractExecutor, context: &mut MockContext) {
-    // Prepare call data for testCreate(uint256 _value)
-    let selector = calculate_selector("testCreate(uint256)");
-    let params = ParamBuilder::new().uint256(123).build();
-    set_call_data_with_params(context, &selector, params);
+    let (call_success, return_data) =
+        decode_call_result(&result.return_data).expect("Failed to decode delegate call result");
 
-    let result = executor
-        .call_contract_function("ContractCalls.wasm", context)
+    assert!(call_success, "Delegate call should succeed");
+    assert_eq!(
+        return_data, EXPECTED_CALL_RETURN_DATA,
+        "Delegate call return data mismatch: expected {:?}, got {:?}",
+        EXPECTED_CALL_RETURN_DATA, return_data
+    );
+}
+/// Test contract creation using CREATE opcode
+fn test_create(fixture: &ContractCallsTestFixture) {
+    let mut context = fixture
+        .create_fresh_context()
+        .expect("Failed to create fresh context");
+
+    let params = ParamBuilder::new().uint256(TEST_CREATE_VALUE).build();
+
+    let result = fixture
+        .call_function(&mut context, &selectors::test_create(), params)
         .expect("Failed to call testCreate()");
 
     assert!(result.success, "testCreate() should succeed");
 
-    // Verify initial count is 0
-    let count_value = decode_address(&result.return_data).unwrap();
+    let created_address =
+        decode_address(&result.return_data).expect("Failed to decode created contract address");
+
+    let expected_address = random_test_address(TEST_CREATE_RESULT_ADDRESS_ID);
     assert_eq!(
-        count_value,
-        random_test_address(9),
-        "Address should be  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9], got {:?}",
-        count_value
+        created_address, expected_address,
+        "Created contract address mismatch: expected {:?}, got {:?}",
+        expected_address, created_address
     );
 }
 
-fn test_create2(executor: &ContractExecutor, context: &mut MockContext) {
-    // Prepare call data for testCreate2(uint256 _value, bytes32 salt)
-    let salt = [
-        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
-        0x07, 0x08,
-    ];
+/// Test contract creation using CREATE2 opcode (deterministic address)
+fn test_create2(fixture: &ContractCallsTestFixture) {
+    let mut context = fixture
+        .create_fresh_context()
+        .expect("Failed to create fresh context");
 
-    // Use ParamBuilder for testCreate2(uint256, bytes32)
-    let params = ParamBuilder::new().uint256(456).fixed_bytes(&salt).build();
+    let params = ParamBuilder::new()
+        .uint256(TEST_CREATE2_VALUE)
+        .fixed_bytes(&TEST_CREATE2_SALT)
+        .build();
 
-    set_call_data_with_params(
-        context,
-        &calculate_selector("testCreate2(uint256,bytes32)"),
-        params,
-    );
-
-    let result = executor
-        .call_contract_function("ContractCalls.wasm", context)
+    let result = fixture
+        .call_function(&mut context, &selectors::test_create2(), params)
         .expect("Failed to call testCreate2()");
 
     assert!(result.success, "testCreate2() should succeed");
 
-    // Verify initial count is 0
-    let count_value = decode_address(&result.return_data).unwrap();
+    let created_address =
+        decode_address(&result.return_data).expect("Failed to decode CREATE2 contract address");
+
+    let expected_address = random_test_address(TEST_CREATE2_RESULT_ADDRESS_ID);
     assert_eq!(
-        count_value,
-        random_test_address(99),
-        "Address should be  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 99], got {:?}",
-        count_value
+        created_address, expected_address,
+        "CREATE2 contract address mismatch: expected {:?}, got {:?}",
+        expected_address, created_address
     );
 }
